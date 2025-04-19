@@ -1,3 +1,5 @@
+import os
+import logging
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO
@@ -5,7 +7,6 @@ from flask_mail import Mail
 from flask_migrate import Migrate
 from flask_cors import CORS
 from app.config import Config
-import logging
 
 # -------------------------
 # 🔌 Global extensions
@@ -25,28 +26,29 @@ def create_app():
     # -------------------------
     # 🔧 Set up logging
     # -------------------------
-    # Setup logger
-    logger = logging.getLogger("MTProtoLogger")
-    logger.setLevel(logging.DEBUG)
+    if not app.logger.hasHandlers():  # Prevent adding handlers multiple times
+        # Setup logger
+        logger = logging.getLogger("MTProtoLogger")
+        logger.setLevel(logging.DEBUG)
 
-    # Create a file handler to write the logs to a file
-    file_handler = logging.FileHandler("app_log.txt")
-    file_handler.setLevel(logging.DEBUG)
+        # Create a file handler to write the logs to a file
+        file_handler = logging.FileHandler("app_log.txt")
+        file_handler.setLevel(logging.DEBUG)
 
-    # Create a console handler to display logs in the terminal
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.DEBUG)
+        # Create a console handler to display logs in the terminal
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.DEBUG)
 
-    # Set formatter for both handlers
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    file_handler.setFormatter(formatter)
-    console_handler.setFormatter(formatter)
+        # Set formatter for both handlers
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+        console_handler.setFormatter(formatter)
 
-    # Add handlers to the logger
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
+        # Add handlers to the logger
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
 
-    app.logger = logger  # Assign logger to the app instance for later use in routes
+        app.logger = logger  # Assign logger to the app instance for later use in routes
 
     # -------------------------
     # Enable CORS for cross-origin support

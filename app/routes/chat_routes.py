@@ -5,11 +5,13 @@ from app.models.user import User
 from app.models.message import Message
 from app.services.encryption_service import encrypt_message, decrypt_message
 from datetime import datetime
+import logging
 
 chat_bp = Blueprint("chat", __name__)
+logger = logging.getLogger(__name__)
 
 # -------------------------------
-# 🧾 Fetch User's Chats (Inbox)
+# 💾 Fetch User's Chats (Inbox)
 # -------------------------------
 @chat_bp.route("/messages/<int:user_id>", methods=["GET"])
 def get_messages(user_id):
@@ -19,7 +21,12 @@ def get_messages(user_id):
 
     results = []
     for msg in messages:
+        sender = User.query.get(msg.sender_id)
+        receiver = User.query.get(msg.receiver_id)
+
+        logger.info(f"Decrypting message FROM '{sender.username}' TO '{receiver.username}'")
         decrypted = decrypt_message(msg.encrypted_data, msg.msg_key, msg.auth_key_id)
+
         results.append({
             "id": msg.id,
             "from": msg.sender_id,
@@ -52,18 +59,20 @@ def handle_send_message(data):
         emit("error", {"message": "User not found"})
         return
 
-    encrypted_blob, msg_key, auth_key_id = encrypt_message(sender, text)
+    # Encrypt the message with MTProto
+    encrypted_blob, msg_key, auth_key_id, salt, session_id, msg_id, seq_no = encrypt_message(sender, text)
 
+    # Store in DB
     message = Message(
         sender_id=sender.id,
         receiver_id=receiver.id,
         encrypted_data=encrypted_blob,
         msg_key=msg_key,
         auth_key_id=auth_key_id,
-        session_id=data.get("session_id"),
-        salt=data.get("salt"),
-        msg_id=data.get("msg_id"),
-        seq_no=data.get("seq_no"),
+        session_id=session_id,
+        salt=salt,
+        msg_id=msg_id,
+        seq_no=seq_no,
         media_type=media_type,
         file_path=data.get("file_path"),
         thumbnail_path=data.get("thumbnail_path"),
@@ -74,18 +83,31 @@ def handle_send_message(data):
     db.session.add(message)
     db.session.commit()
 
-    # Notify receiver in real time
+    # ✅ Decrypt to simulate receiver behavior (this logs decryption flow)
+    decrypted = decrypt_message(encrypted_blob, msg_key, auth_key_id)
+
+    # 🔄 Emit to receiver (plaintext message)
     room = f"user_{receiver.id}"
     emit("receive_message", {
         "id": message.id,
         "from": sender.id,
         "to": receiver.id,
-        "text": text,
+        "text": decrypted.get("text"),
         "timestamp": message.timestamp.isoformat(),
         "status": "✔"
     }, room=room)
 
-    # Acknowledge sender (✔)
+    # ✅ Emit to sender so they also see it in their own UI
+    emit("receive_message", {
+        "id": message.id,
+        "from": sender.id,
+        "to": receiver.id,
+        "text": decrypted.get("text"),
+        "timestamp": message.timestamp.isoformat(),
+        "status": "✔"
+    }, room=f"user_{sender.id}")
+
+    # ✔ Mark sender message with single tick
     emit("message_status", {
         "message_id": message.id,
         "status": "✔"
@@ -130,8 +152,6 @@ def update_message_status(data):
 # -------------------------------
 @chat_bp.route("/contacts/<int:user_id>")
 def get_contacts(user_id):
-    from app.models.user import User
-
     messages = Message.query.filter(
         (Message.sender_id == user_id) | (Message.receiver_id == user_id)
     ).order_by(Message.timestamp.desc()).all()
@@ -150,7 +170,6 @@ def get_contacts(user_id):
                 })
                 seen.add(other_id)
 
-    # Now add the rest of users
     all_users = User.query.filter(User.id != user_id).all()
     for u in all_users:
         if u.id not in seen:
@@ -168,12 +187,12 @@ def get_contacts(user_id):
 def handle_join(data):
     user_id = data.get("user_id")
     room = f"user_{user_id}"
-    
-    # Avoid joining the same room multiple times for the same user
-    if request.sid not in socketio.server.manager.get_participants(room):
+
+    participants = socketio.server.manager.get_participants("/", room)
+    if request.sid not in participants:
         print(f"User {user_id} joining room {room}.")
         join_room(room)
-        
+
         user = User.query.get(user_id)
         if user:
             user.is_online = True
@@ -225,7 +244,7 @@ def delete_message():
         return jsonify({"success": False, "message": "Message not found"})
 
     if delete_for_all:
-        db.session.delete(message)  # Deletes message completely for everyone
+        db.session.delete(message)
     else:
         if message.sender_id == user_id:
             message.visible_to_sender = False

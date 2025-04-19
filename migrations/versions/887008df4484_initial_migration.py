@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: a3aa0e84909d
-Revises: 78b1d938f743
-Create Date: 2025-04-17 13:16:46.622697
+Revision ID: 887008df4484
+Revises: 
+Create Date: 2025-04-18 23:38:54.316710
 
 """
 from alembic import op
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'a3aa0e84909d'
-down_revision = '78b1d938f743'
+revision = '887008df4484'
+down_revision = None
 branch_labels = None
 depends_on = None
 
@@ -28,7 +28,7 @@ def upgrade():
     sa.Column('last_login', sa.DateTime(), nullable=True),
     sa.Column('otp_code', sa.String(length=6), nullable=True),
     sa.Column('otp_expiry', sa.DateTime(), nullable=True),
-    sa.Column('auth_key', sa.LargeBinary(), nullable=True),
+    sa.Column('auth_key', sa.LargeBinary(length=32), nullable=True),
     sa.Column('auth_key_id', sa.String(length=64), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=True),
     sa.Column('is_online', sa.Boolean(), nullable=True),
@@ -45,19 +45,16 @@ def upgrade():
     sa.Column('encrypted_data', sa.LargeBinary(), nullable=False),
     sa.Column('msg_key', sa.String(length=64), nullable=False),
     sa.Column('auth_key_id', sa.String(length=64), nullable=False),
-    sa.Column('session_id', sa.String(length=64), nullable=True),
-    sa.Column('msg_id', sa.String(length=128), nullable=True),
-    sa.Column('salt', sa.String(length=64), nullable=True),
-    sa.Column('seq_no', sa.Integer(), nullable=True),
+    sa.Column('session_id', sa.String(length=64), nullable=False),
+    sa.Column('msg_id', sa.String(length=64), nullable=False),
+    sa.Column('salt', sa.String(length=64), nullable=False),
+    sa.Column('seq_no', sa.Integer(), nullable=False),
     sa.Column('file_path', sa.String(length=256), nullable=True),
     sa.Column('thumbnail_path', sa.String(length=256), nullable=True),
-    sa.Column('media_type', sa.String(length=32), nullable=True),
-    sa.Column('original_filename', sa.String(length=128), nullable=True),
-    sa.Column('status', sa.String(length=16), nullable=True),
-    sa.Column('retry_count', sa.Integer(), nullable=True),
+    sa.Column('media_type', sa.String(length=64), nullable=True),
+    sa.Column('original_filename', sa.String(length=256), nullable=True),
+    sa.Column('status', sa.String(length=64), nullable=False),
     sa.Column('timestamp', sa.DateTime(), nullable=True),
-    sa.Column('visible_to_sender', sa.Boolean(), nullable=True),
-    sa.Column('visible_to_receiver', sa.Boolean(), nullable=True),
     sa.ForeignKeyConstraint(['receiver_id'], ['users.id'], ),
     sa.ForeignKeyConstraint(['sender_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')

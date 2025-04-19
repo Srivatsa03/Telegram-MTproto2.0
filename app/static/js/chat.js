@@ -1,3 +1,4 @@
+// Connect to Socket.IO server
 const socket = io.connect(window.location.origin);
 
 // Join user's private room on page load
@@ -8,10 +9,10 @@ if (userId) {
 
 // Handle incoming message
 socket.on("receive_message", (data) => {
-    displayMessage(data, "received");
+    displayMessage(data, data.from == userId ? "sent" : "received");
 
     // Mark as delivered (✔✔)
-    if (data.id) {
+    if (data.id && data.to == userId) {
         socket.emit("message_status", {
             message_id: data.id,
             status: "✔✔"
@@ -43,8 +44,6 @@ function sendMessage() {
     };
 
     socket.emit("send_message", payload);
-    displayMessage(payload, "sent");
-
     input.value = "";
 }
 
@@ -62,7 +61,6 @@ function displayMessage(data, type) {
 
     const bubble = document.createElement("div");
     bubble.classList.add("message-bubble", type === "sent" ? "message-sent" : "message-received");
-
     bubble.setAttribute("data-msg-id", data.id || "");
 
     bubble.innerHTML = `
@@ -184,19 +182,16 @@ function openChatWith(user) {
     document.getElementById("receiverId").value = user.id;
     localStorage.setItem("recipient_id", user.id);
 
-    // Fetch status
     fetch(`/status/${user.id}`)
         .then(res => res.json())
         .then(data => {
             document.getElementById("userStatus").textContent = data.status === "online"
-                ? "🟢 Online"
-                : `🕓 ${data.status}`;
+                ? "Online"
+                : `${data.status}`;
         });
 
-    // Load chat with only that user
     loadChatHistory(user.id);
 
-    // 🟰 Reorder sidebar (put selected user on top)
     const chatList = document.getElementById("chatList");
     const clickedItem = [...chatList.children].find(li => li.dataset.userId == user.id);
     if (clickedItem) {
@@ -205,7 +200,7 @@ function openChatWith(user) {
     }
 }
 
-// Load messages between current user and selected contact
+// Load chat history
 function loadChatHistory(withUserId) {
     const myId = localStorage.getItem("user_id");
     fetch(`/chat/messages/${myId}`)
@@ -229,7 +224,6 @@ window.onload = () => {
         socket.emit("join", { user_id: parseInt(userId) });
         loadChatList();
 
-        // 🧼 Don't auto-load any chat on refresh
         document.getElementById("chatBox").innerHTML = "";
         document.getElementById("chatWith").innerText = "Select a user to start chatting";
         document.getElementById("userStatus").textContent = "";
@@ -280,7 +274,7 @@ function deleteMessage(messageId, forEveryone = false) {
       .then(data => {
         if (data.success) {
             const el = document.querySelector(`[data-msg-id="${messageId}"]`);
-            if (el) el.parentElement.remove();  // Remove the message from the UI
+            if (el) el.parentElement.remove();
         } else {
             console.error("Message deletion failed");
         }

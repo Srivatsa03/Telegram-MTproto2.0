@@ -6,31 +6,25 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 from Crypto.Random import get_random_bytes
 import logging
+import base64
 
-# Setup logger
 logger = logging.getLogger("MTProtoLogger")
 logger.setLevel(logging.DEBUG)
 
-# Create a file handler to write the logs to a file
-file_handler = logging.FileHandler("mtproto_log.txt")
-file_handler.setLevel(logging.DEBUG)
+if not logger.handlers:
+    file_handler = logging.FileHandler("mtproto_log.txt")
+    file_handler.setLevel(logging.DEBUG)
 
-# Create a console handler to display logs in the terminal
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.DEBUG)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.DEBUG)
 
-# Set formatter for both handlers
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-file_handler.setFormatter(formatter)
-console_handler.setFormatter(formatter)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
 
-# Add handlers to the logger
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
 
-# -------------------------------
-# 🔐 AES-256 in IGE Mode (CBC Demo)
-# -------------------------------
 def aes_ige_encrypt(plaintext, key, iv):
     logger.info("Encrypting with AES-IGE...")
     cipher = AES.new(key, AES.MODE_CBC, iv)
@@ -45,16 +39,6 @@ def aes_ige_decrypt(ciphertext, key, iv):
     logger.debug(f"Decrypted data: {decrypted.hex()}")
     return decrypted
 
-# -------------------------------
-# 🔍 SHA256 Middle 128 Bits
-# -------------------------------
-def sha256_middle_128(data: bytes):
-    full = sha256(data).digest()
-    return full[8:24]
-
-# -------------------------------
-# 🔑 Derive AES Key & IV
-# -------------------------------
 def derive_aes_key_iv(auth_key, msg_key):
     logger.info("Deriving AES key and IV...")
     sha_a = sha256(msg_key + auth_key[0:36]).digest()
@@ -66,66 +50,93 @@ def derive_aes_key_iv(auth_key, msg_key):
     logger.debug(f"AES IV: {aes_iv.hex()}")
     return aes_key[:32], aes_iv[:16]
 
-# -------------------------------
-# 🔑 Generate Auth Key using Diffie-Hellman
-# -------------------------------
 def generate_auth_key():
     logger.info("Generating auth key using Diffie-Hellman (simulated)...")
-    # Placeholder: Implement Diffie-Hellman key generation logic here
     auth_key = get_random_bytes(256)
     logger.debug(f"Generated Auth Key: {auth_key.hex()}")
     return auth_key
 
-# ----------------------------------
-# 🔒 Encrypt Message (MTProto style)
-# ----------------------------------
 def encrypt_message(user, plaintext_str):
-    logger.info("Encrypting message using MTProto 2.0...")
+    logger.info("===== MTProto ENCRYPTION FLOW START =====")
 
     if not user.auth_key:
-        # Generate new 256-bit session key if not exists
         user.auth_key = generate_auth_key()
         user.auth_key_id = sha256(user.auth_key).hexdigest()
 
-    plaintext_bytes = json.dumps({"text": plaintext_str}).encode()
+    salt_bytes = get_random_bytes(8)
+    session_id_bytes = get_random_bytes(8)
+    msg_id = int(time.time() * 1000)
+    seq_no = int.from_bytes(get_random_bytes(4), byteorder='big')
 
-    # Step 1: Compute msg_key (middle 128 bits of SHA256 of auth_key + plaintext)
-    temp_data = user.auth_key[:32] + plaintext_bytes
+    payload_dict = {
+        "text": plaintext_str,
+        "time": int(time.time()),
+        "msg_id": msg_id,
+        "seq_no": seq_no
+    }
+    payload = json.dumps(payload_dict).encode()
+
+    to_encrypt = salt_bytes + session_id_bytes + payload
+    temp_data = user.auth_key[:32] + to_encrypt
     msg_key_full = sha256(temp_data).digest()
     msg_key = msg_key_full[8:24]
-    logger.debug(f"Generated Msg Key: {msg_key.hex()}")
 
-    # Step 2: Derive AES key & IV
     aes_key, aes_iv = derive_aes_key_iv(user.auth_key, msg_key)
+    encrypted_data = aes_ige_encrypt(to_encrypt, aes_key, aes_iv)
 
-    # Step 3: Encrypt
-    encrypted_data = aes_ige_encrypt(plaintext_bytes, aes_key, aes_iv)
+    logger.debug(f"Auth Key ID         : {user.auth_key_id}")
+    logger.debug(f"Salt (hex)          : {salt_bytes.hex()}")
+    logger.debug(f"Session ID (hex)    : {session_id_bytes.hex()}")
+    logger.debug(f"Msg ID              : {msg_id}")
+    logger.debug(f"Seq No              : {seq_no}")
+    logger.debug("Payload JSON        :\n" + json.dumps(payload_dict, indent=4))
+    logger.debug("Encrypted (base64)  : " + base64.b64encode(encrypted_data).decode())
 
-    logger.info("Message encryption complete.")
-    return encrypted_data, msg_key.hex(), user.auth_key_id
+    logger.info("===== MTProto ENCRYPTION FLOW END =====\n")
 
-# ----------------------------------
-# 🔓 Decrypt Message
-# ----------------------------------
+    return (
+        encrypted_data,
+        msg_key.hex(),
+        user.auth_key_id,
+        salt_bytes.hex(),
+        session_id_bytes.hex(),
+        str(msg_id),
+        seq_no
+    )
+
 def decrypt_message(encrypted_blob, msg_key_hex, auth_key_id):
     from app.models.user import User
     from app import db
 
+    logger.info("===== MTProto DECRYPTION FLOW START =====")
     logger.info(f"Decrypting message with auth_key_id: {auth_key_id}...")
+
     user = User.query.filter_by(auth_key_id=auth_key_id).first()
     if not user or not user.auth_key:
         logger.error("Auth key not found.")
         return {"error": "Auth key not found"}
 
     msg_key = bytes.fromhex(msg_key_hex)
-
-    # Derive AES key/IV again
     aes_key, aes_iv = derive_aes_key_iv(user.auth_key, msg_key)
 
     try:
-        plaintext = aes_ige_decrypt(encrypted_blob, aes_key, aes_iv)
-        logger.debug(f"Decrypted plaintext: {plaintext}")
-        return json.loads(plaintext.decode())
+        decrypted = aes_ige_decrypt(encrypted_blob, aes_key, aes_iv)
+        salt = decrypted[0:8]
+        session_id = decrypted[8:16]
+        payload = decrypted[16:]
+
+        payload_json = json.loads(payload.decode())
+
+        logger.debug(f"Derived AES Key     : {aes_key.hex()}")
+        logger.debug(f"Derived AES IV      : {aes_iv.hex()}")
+        logger.debug(f"Salt (hex)          : {salt.hex()}")
+        logger.debug(f"Session ID (hex)    : {session_id.hex()}")
+        logger.debug("Payload JSON        :\n" + json.dumps(payload_json, indent=4))
+
+        logger.info("===== MTProto DECRYPTION FLOW END =====\n")
+
+        return payload_json
+
     except Exception as e:
         logger.error(f"[DECRYPTION ERROR]: {str(e)}")
         return {"error": "Decryption failed"}

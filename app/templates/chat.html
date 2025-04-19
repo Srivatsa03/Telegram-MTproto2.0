@@ -20,6 +20,8 @@
         <!-- Messages will be appended here -->
       </div>
 
+      <div id="typingStatus" class="mb-2 text-muted" style="display: none;"></div>
+
       <div class="d-flex gap-2 mb-2">
         <input type="text" class="form-control" id="messageInput" placeholder="Type a message...">
         <button class="btn btn-primary" onclick="sendMessage()">Send</button>
@@ -34,7 +36,6 @@
 </div>
 
 <input type="hidden" id="receiverId">
-
 <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
 

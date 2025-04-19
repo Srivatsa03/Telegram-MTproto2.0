@@ -14,22 +14,18 @@ auth_bp = Blueprint("auth", __name__)
 # -------------------------------
 @auth_bp.route("/register", methods=["POST"])
 def register():
-    # Expecting JSON data
     data = request.get_json()
     username = data.get("username")
     email = data.get("email")
     phone = data.get("phone")
     password = data.get("password")
 
-    # Validate inputs
     if not password or not (email or phone or username):
         return jsonify({"error": "Missing required fields"}), 400
 
-    # Check if user already exists
     if User.query.filter((User.email == email) | (User.phone == phone) | (User.username == username)).first():
         return jsonify({"error": "User already exists"}), 400
 
-    # Create user
     user = User(username=username, email=email, phone=phone)
     user.set_password(password)
     db.session.add(user)
@@ -44,11 +40,11 @@ def register():
 @auth_bp.route("/login", methods=["POST"])
 def login():
     data = request.get_json()
-    login_id = data.get("login_id")  # username, email, or phone
+    login_id = data.get("login_id")
     password = data.get("password")
 
     user = User.query.filter(
-        (User.email == login_id) | 
+        (User.email == login_id) |
         (User.phone == login_id) |
         (User.username == login_id)
     ).first()
@@ -128,7 +124,7 @@ def verify_otp():
 
 
 # -------------------------------
-# 🔐 Send Encrypted Message
+# 🔐 Encrypt and Return MTProto Encrypted Payload
 # -------------------------------
 @auth_bp.route("/send-message", methods=["POST"])
 def send_message():
@@ -137,34 +133,31 @@ def send_message():
     recipient_id = data.get("recipient_id")
     plaintext_message = data.get("message")
 
-    # Fetch user and recipient
     user = User.query.filter_by(id=user_id).first()
     recipient = User.query.filter_by(id=recipient_id).first()
 
     if not user or not recipient:
         return jsonify({"error": "User or recipient not found"}), 404
 
-    # Encrypt message
-    encrypted_data, msg_key, auth_key_id = encrypt_message(user, plaintext_message)
+    # MTProto 2.0 encryption — unpack all fields
+    encrypted_data, msg_key, auth_key_id, salt, session_id, msg_id, seq_no = encrypt_message(user, plaintext_message)
 
-    # Store encrypted message in database (you can adjust the model as necessary)
-    encrypted_message = {
-        "sender_id": user.id,
-        "receiver_id": recipient.id,
-        "message": encrypted_data.hex(),
-        "msg_key": msg_key,
-        "auth_key_id": auth_key_id,
-        "timestamp": datetime.utcnow()
-    }
-
-    db.session.add(encrypted_message)
-    db.session.commit()
-
-    return jsonify({"message": "Encrypted message sent successfully"}), 201
+    return jsonify({
+        "message": "Encrypted message generated",
+        "payload": {
+            "message": encrypted_data.hex(),
+            "msg_key": msg_key,
+            "auth_key_id": auth_key_id,
+            "salt": salt,
+            "session_id": session_id,
+            "msg_id": msg_id,
+            "seq_no": seq_no
+        }
+    }), 201
 
 
 # -------------------------------
-# 🔓 Decrypt Message
+# 🔓 Decrypt MTProto Message
 # -------------------------------
 @auth_bp.route("/decrypt-message", methods=["POST"])
 def decrypt_msg():
@@ -175,10 +168,9 @@ def decrypt_msg():
 
     encrypted_message = bytes.fromhex(encrypted_message_hex)
 
-    # Decrypt the message
     decrypted_message = decrypt_message(encrypted_message, msg_key, auth_key_id)
 
     if "error" in decrypted_message:
         return jsonify(decrypted_message), 400
 
-    return jsonify({"decrypted_message": decrypted_message["text"]}), 200
+    return jsonify({"decrypted_message": decrypted_message.get("text")}), 200
