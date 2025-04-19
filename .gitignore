@@ -1,0 +1,15 @@
+# Ignore environment variable files
+.env
+
+# Ignore Python bytecode files
+*.pyc
+__pycache__/
+
+# Ignore the virtual environment folder
+venv/
+
+# Ignore the instance folder (config files)
+instance/
+
+# Ignore uploads folder
+uploads/

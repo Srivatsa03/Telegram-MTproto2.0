@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="container-fluid mt-3">
+  <div class="row">
+    <!-- Sidebar -->
+    <div class="col-md-3 border-end">
+      <h5>Chats</h5>
+      <button onclick="deleteChat()" class="btn btn-sm btn-outline-danger ms-2">
+        🗑️ Clear Chat
+      </button>
+      <ul id="chatList" class="list-group"></ul>
+    </div>
+
+    <!-- Chat Window -->
+    <div class="col-md-9">
+      <h5 id="chatWith">Select a user to start chatting</h5>
+
+      <div id="chatBox" class="border rounded p-3 mb-3" style="height: 400px; overflow-y: auto; background: #f9f9f9;">
+        <!-- Messages will be appended here -->
+      </div>
+
+      <div class="d-flex gap-2 mb-2">
+        <input type="text" class="form-control" id="messageInput" placeholder="Type a message...">
+        <button class="btn btn-primary" onclick="sendMessage()">Send</button>
+      </div>
+
+      <div class="mt-2">
+        <label>Attach File / Image:</label>
+        <input type="file" class="form-control" onchange="sendFile(this)">
+      </div>
+    </div>
+  </div>
+</div>
+
+<input type="hidden" id="receiverId">
+
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+<script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+
+{% endblock %}

@@ -1,0 +1,106 @@
+/* General Styling */
+body {
+    background-color: #f7f9fc;
+    font-family: 'Segoe UI', sans-serif;
+  }
+  
+  h5 {
+    font-weight: 600;
+  }
+  
+  .container-fluid {
+    padding: 20px;
+  }
+  
+  /* Chat Box */
+  #chatBox {
+    height: 400px;
+    overflow-y: auto;
+    background-color: #f5f5f5;
+    padding: 15px;
+    border-radius: 6px;
+    border: 1px solid #ddd;
+  }
+  
+  /* Message wrapper alignment */
+  .message-wrapper {
+    display: flex;
+    margin-bottom: 10px;
+  }
+  
+  /* Sent messages: align right */
+  .message-wrapper.sent {
+    justify-content: flex-end;
+  }
+  
+  /* Received messages: align left */
+  .message-wrapper.received {
+    justify-content: flex-start;
+  }
+  
+  /* Base bubble */
+  .message-bubble {
+    max-width: 70%;
+    padding: 10px 15px;
+    border-radius: 18px;
+    font-size: 15px;
+    word-wrap: break-word;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  }
+  
+  /* Sent by me */
+  .message-sent {
+    background-color: #d1e7dd; /* greenish */
+    color: #000;
+    border-bottom-right-radius: 2px;
+    margin-left: auto;
+  }
+  
+  /* Received */
+  .message-received {
+    background-color: #e2e3e5; /* light gray */
+    color: #000;
+    border-bottom-left-radius: 2px;
+    margin-right: auto;
+  }
+  
+  /* Message content */
+  .message-text {
+    white-space: pre-wrap;
+  }
+  
+  /* Meta: time, status */
+  .message-meta {
+    font-size: 11px;
+    color: #555;
+    margin-top: 4px;
+    text-align: right;
+  }
+  
+  /* User sidebar */
+  #chatList {
+    height: 400px;
+    overflow-y: auto;
+  }
+  
+  .list-group-item.active {
+    background-color: #007bff !important;
+    border-color: #007bff !important;
+    color: white;
+  }
+  
+  /* File upload section */
+  input[type="file"] {
+    margin-top: 5px;
+  }
+  
+  /* Responsive tweaks */
+  @media (max-width: 768px) {
+    #chatBox {
+      height: 300px;
+    }
+  
+    .message-bubble {
+      max-width: 85%;
+    }
+  }
