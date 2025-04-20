@@ -11,7 +11,7 @@ chat_bp = Blueprint("chat", __name__)
 logger = logging.getLogger(__name__)
 
 # -------------------------------
-# 💾 Fetch User's Chats (Inbox)
+# 📂 Fetch User's Chats (Inbox)
 # -------------------------------
 @chat_bp.route("/messages/<int:user_id>", methods=["GET"])
 def get_messages(user_id):
@@ -21,10 +21,6 @@ def get_messages(user_id):
 
     results = []
     for msg in messages:
-        sender = User.query.get(msg.sender_id)
-        receiver = User.query.get(msg.receiver_id)
-
-        logger.info(f"Decrypting message FROM '{sender.username}' TO '{receiver.username}'")
         decrypted = decrypt_message(msg.encrypted_data, msg.msg_key, msg.auth_key_id)
 
         results.append({
@@ -42,7 +38,7 @@ def get_messages(user_id):
     return jsonify(results)
 
 # -------------------------------
-# 📡 Socket: Send Message
+# 📱 Socket: Send Message
 # -------------------------------
 @socketio.on("send_message")
 def handle_send_message(data):
@@ -59,10 +55,8 @@ def handle_send_message(data):
         emit("error", {"message": "User not found"})
         return
 
-    # Encrypt the message with MTProto
-    encrypted_blob, msg_key, auth_key_id, salt, session_id, msg_id, seq_no = encrypt_message(sender, text)
+    encrypted_blob, msg_key, auth_key_id, salt, session_id, msg_id, seq_no = encrypt_message(sender, receiver, text)
 
-    # Store in DB
     message = Message(
         sender_id=sender.id,
         receiver_id=receiver.id,
@@ -83,10 +77,8 @@ def handle_send_message(data):
     db.session.add(message)
     db.session.commit()
 
-    # ✅ Decrypt to simulate receiver behavior (this logs decryption flow)
     decrypted = decrypt_message(encrypted_blob, msg_key, auth_key_id)
 
-    # 🔄 Emit to receiver (plaintext message)
     room = f"user_{receiver.id}"
     emit("receive_message", {
         "id": message.id,
@@ -97,7 +89,6 @@ def handle_send_message(data):
         "status": "✔"
     }, room=room)
 
-    # ✅ Emit to sender so they also see it in their own UI
     emit("receive_message", {
         "id": message.id,
         "from": sender.id,
@@ -107,7 +98,6 @@ def handle_send_message(data):
         "status": "✔"
     }, room=f"user_{sender.id}")
 
-    # ✔ Mark sender message with single tick
     emit("message_status", {
         "message_id": message.id,
         "status": "✔"

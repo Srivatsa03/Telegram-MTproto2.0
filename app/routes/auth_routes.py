@@ -1,11 +1,10 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session, redirect, url_for, render_template
 from app import db, mail
 from app.models.user import User
 from app.services.otp_service import send_otp_email, send_otp_sms, generate_otp
 from app.services.encryption_service import encrypt_message, decrypt_message
 from datetime import datetime, timedelta
 from flask_mail import Message as MailMessage
-from flask import session, redirect, url_for, request, render_template
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -55,11 +54,23 @@ def login():
     user.last_login = datetime.utcnow()
     db.session.commit()
 
+    session["user_id"] = user.id
+    session["username"] = user.username
+
     return jsonify({
         "message": "Login successful",
         "user_id": user.id,
         "username": user.username
     })
+
+
+# -------------------------------
+# 🚪 Logout User
+# -------------------------------
+@auth_bp.route("/logout", methods=["GET", "POST"])
+def logout():
+    session.clear()
+    return redirect(url_for("general.index"))
 
 
 # -------------------------------
@@ -133,14 +144,16 @@ def send_message():
     recipient_id = data.get("recipient_id")
     plaintext_message = data.get("message")
 
-    user = User.query.filter_by(id=user_id).first()
-    recipient = User.query.filter_by(id=recipient_id).first()
+    sender_user = User.query.filter_by(id=user_id).first()
+    recipient_user = User.query.filter_by(id=recipient_id).first()
 
-    if not user or not recipient:
+    if not sender_user or not recipient_user:
         return jsonify({"error": "User or recipient not found"}), 404
 
-    # MTProto 2.0 encryption — unpack all fields
-    encrypted_data, msg_key, auth_key_id, salt, session_id, msg_id, seq_no = encrypt_message(user, plaintext_message)
+    # Pass both sender and recipient to encryption
+    encrypted_data, msg_key, auth_key_id, salt, session_id, msg_id, seq_no = encrypt_message(
+        sender_user, recipient_user, plaintext_message
+    )
 
     return jsonify({
         "message": "Encrypted message generated",
@@ -167,7 +180,6 @@ def decrypt_msg():
     auth_key_id = data.get("auth_key_id")
 
     encrypted_message = bytes.fromhex(encrypted_message_hex)
-
     decrypted_message = decrypt_message(encrypted_message, msg_key, auth_key_id)
 
     if "error" in decrypted_message:

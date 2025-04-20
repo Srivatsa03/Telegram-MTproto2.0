@@ -7,7 +7,7 @@ load_dotenv()
 class Config:
     # Security
     
-
+    SECRET_KEY = os.environ.get("SECRET_KEY", "super-secret-dev-key") 
     # SQLAlchemy Database URI
     SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", "sqlite:///../instance/app.db")  # Default to SQLite if DATABASE_URL is not set
     SQLALCHEMY_TRACK_MODIFICATIONS = False
