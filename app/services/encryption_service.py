@@ -143,31 +143,36 @@ def decrypt_message(encrypted_blob, msg_key_hex, auth_key_id):
     if not user or not user.auth_key:
         return {"error": "Auth key not found"}
 
-    recipient = user
-    recipient_name = recipient.username or recipient.email or recipient.phone
-    logger = get_user_logger(recipient_name)
-
-    logger.info("===== MTProto DECRYPTION FLOW START =====")
-    logger.info(f"\U0001f4e5 User '{recipient_name}' is receiving a message...")
-
     msg_key = bytes.fromhex(msg_key_hex)
-    aes_key, aes_iv = derive_aes_key_iv(recipient.auth_key, msg_key, logger)
+    temp_logger = get_user_logger("temp_debug")
+    aes_key, aes_iv = derive_aes_key_iv(user.auth_key, msg_key, temp_logger)
 
     try:
-        decrypted = aes_ige_decrypt(encrypted_blob, aes_key, aes_iv, logger)
+        decrypted = aes_ige_decrypt(encrypted_blob, aes_key, aes_iv, temp_logger)
         salt = decrypted[0:8]
         session_id = decrypted[8:16]
         payload = decrypted[16:]
 
         payload_json = json.loads(payload.decode())
 
-        sender_id = payload_json.get("sender_id")
-        sender = User.query.get(sender_id)
-        sender_str = sender.username if sender else f"ID:{sender_id}"
+        recipient_id = payload_json.get("recipient_id")
+        recipient = User.query.get(recipient_id)
 
-        logger.info(f"\U0001f4e8 Message received from '{sender_str}'")
+        if recipient:
+            recipient_name = recipient.username or recipient.email or recipient.phone
+            logger = get_user_logger(recipient_name)
+        else:
+            logger = temp_logger
+
+        logger.info("===== MTProto DECRYPTION FLOW START =====")
+        logger.info(f"\U0001f4e5 User '{recipient_name}' is receiving a message...")
+        logger.debug(f"Encrypted blob length: {len(encrypted_blob)} bytes")
+        logger.debug(f"Encrypted blob (hex)  : {encrypted_blob.hex()}")
+
         logger.debug(f"Derived AES Key     : {aes_key.hex()}")
         logger.debug(f"Derived AES IV      : {aes_iv.hex()}")
+        logger.info("Decrypting with AES-IGE...")
+        logger.debug(f"Decrypted data: {decrypted.hex()}")
         logger.debug(f"Salt (hex)          : {salt.hex()}")
         logger.debug(f"Session ID (hex)    : {session_id.hex()}")
         logger.debug("Payload JSON        :\n" + json.dumps(payload_json, indent=4))
@@ -176,5 +181,6 @@ def decrypt_message(encrypted_blob, msg_key_hex, auth_key_id):
         return payload_json
 
     except Exception as e:
-        logger.error(f"[DECRYPTION ERROR]: {str(e)}")
+        temp_logger.error("❌ Padding error: likely wrong AES key/IV or corrupted ciphertext.")
+        temp_logger.error("[DECRYPTION ERROR]", exc_info=True)
         return {"error": "Decryption failed"}

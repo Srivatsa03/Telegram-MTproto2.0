@@ -1,3 +1,4 @@
+# chat_routes.py
 from flask import Blueprint, request, jsonify
 from flask_socketio import emit, join_room, disconnect
 from app import db, socketio
@@ -10,9 +11,6 @@ import logging
 chat_bp = Blueprint("chat", __name__)
 logger = logging.getLogger(__name__)
 
-# -------------------------------
-# 📂 Fetch User's Chats (Inbox)
-# -------------------------------
 @chat_bp.route("/messages/<int:user_id>", methods=["GET"])
 def get_messages(user_id):
     messages = Message.query.filter(
@@ -37,16 +35,13 @@ def get_messages(user_id):
 
     return jsonify(results)
 
-# -------------------------------
-# 📱 Socket: Send Message
-# -------------------------------
 @socketio.on("send_message")
 def handle_send_message(data):
     sender_id = data.get("sender_id")
     receiver_id = data.get("receiver_id")
     text = data.get("text")
-    media = data.get("media")  # optional (base64/filepath)
-    media_type = data.get("media_type")  # image, file, etc.
+    media = data.get("media")
+    media_type = data.get("media_type")
 
     sender = User.query.get(sender_id)
     receiver = User.query.get(receiver_id)
@@ -56,6 +51,8 @@ def handle_send_message(data):
         return
 
     encrypted_blob, msg_key, auth_key_id, salt, session_id, msg_id, seq_no = encrypt_message(sender, receiver, text)
+
+    logger.info(f"[ENCRYPT] User '{sender.username}' sent message to '{receiver.username}'")
 
     message = Message(
         sender_id=sender.id,
@@ -79,7 +76,6 @@ def handle_send_message(data):
 
     decrypted = decrypt_message(encrypted_blob, msg_key, auth_key_id)
 
-    room = f"user_{receiver.id}"
     emit("receive_message", {
         "id": message.id,
         "from": sender.id,
@@ -87,7 +83,7 @@ def handle_send_message(data):
         "text": decrypted.get("text"),
         "timestamp": message.timestamp.isoformat(),
         "status": "✔"
-    }, room=room)
+    }, room=f"user_{receiver.id}")
 
     emit("receive_message", {
         "id": message.id,
@@ -103,9 +99,6 @@ def handle_send_message(data):
         "status": "✔"
     }, room=f"user_{sender.id}")
 
-# -------------------------------
-# ✅ Socket: Message Read
-# -------------------------------
 @socketio.on("mark_read")
 def mark_message_read(data):
     message_id = data.get("message_id")
@@ -119,9 +112,6 @@ def mark_message_read(data):
             "status": "✅"
         }, room=f"user_{message.sender_id}")
 
-# -------------------------------
-# ✔✔ Socket: Message Delivered
-# -------------------------------
 @socketio.on("message_status")
 def update_message_status(data):
     message_id = data.get("message_id")
@@ -137,9 +127,6 @@ def update_message_status(data):
             "status": new_status
         }, room=f"user_{message.sender_id}")
 
-# -------------------------------
-# 👥 Load Chat Contacts
-# -------------------------------
 @chat_bp.route("/contacts/<int:user_id>")
 def get_contacts(user_id):
     messages = Message.query.filter(
@@ -170,9 +157,6 @@ def get_contacts(user_id):
 
     return jsonify(ordered_contacts)
 
-# -------------------------------
-# 🔌 Socket.IO Events
-# -------------------------------
 @socketio.on("join")
 def handle_join(data):
     user_id = data.get("user_id")
@@ -180,7 +164,6 @@ def handle_join(data):
 
     participants = socketio.server.manager.get_participants("/", room)
     if request.sid not in participants:
-        print(f"User {user_id} joining room {room}.")
         join_room(room)
 
         user = User.query.get(user_id)
@@ -188,20 +171,12 @@ def handle_join(data):
             user.is_online = True
             user.last_seen = datetime.utcnow()
             db.session.commit()
-            print(f"User {user.username} is now online.")
-        else:
-            print(f"User with ID {user_id} not found.")
-    else:
-        print(f"User {user_id} already connected. Skipping.")
 
 @socketio.on("disconnect")
 def handle_disconnect():
     sid = request.sid
     print(f"🔌 Socket {sid} disconnected")
 
-# -------------------------------
-# ✍️ Typing Indicator
-# -------------------------------
 @socketio.on("typing")
 def handle_typing(data):
     sender = data.get("from")
@@ -219,9 +194,6 @@ def handle_typing(data):
 def handle_connect():
     print("User connected")
 
-# -------------------------------
-# 🗑️ Delete Message
-# -------------------------------
 @chat_bp.route("/delete_message", methods=["POST"])
 def delete_message():
     data = request.json
@@ -244,9 +216,6 @@ def delete_message():
     db.session.commit()
     return jsonify({"success": True})
 
-# -------------------------------
-# ✅ Clear Chat - Delete All Messages
-# -------------------------------
 @chat_bp.route("/delete_chat/<int:user_id>/<int:with_user_id>", methods=["POST"])
 def delete_chat(user_id, with_user_id):
     messages = Message.query.filter(
