@@ -9,7 +9,6 @@ import logging
 import base64
 from datetime import datetime, timedelta
 
-
 def get_user_logger(username, retention_days=7):
     logs_dir = os.path.join(os.getcwd(), "logs")
     os.makedirs(logs_dir, exist_ok=True)
@@ -35,14 +34,11 @@ def get_user_logger(username, retention_days=7):
 
     file_handler = logging.FileHandler(log_file)
     file_handler.setLevel(logging.DEBUG)
-
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     file_handler.setFormatter(formatter)
-
     logger.addHandler(file_handler)
 
     return logger
-
 
 def aes_ige_encrypt(plaintext, key, iv, logger):
     logger.info("Encrypting with AES-IGE...")
@@ -51,7 +47,6 @@ def aes_ige_encrypt(plaintext, key, iv, logger):
     logger.debug(f"Encrypted data: {encrypted.hex()}")
     return encrypted
 
-
 def aes_ige_decrypt(ciphertext, key, iv, logger):
     logger.info("Decrypting with AES-IGE...")
     cipher = AES.new(key, AES.MODE_CBC, iv)
@@ -59,25 +54,23 @@ def aes_ige_decrypt(ciphertext, key, iv, logger):
     logger.debug(f"Decrypted data: {decrypted.hex()}")
     return decrypted
 
-
 def derive_aes_key_iv(auth_key, msg_key, logger):
-    logger.info("Deriving AES key and IV...")
+    logger.info("Deriving AES key and IV using msg_key + auth_key...")
     sha_a = sha256(msg_key + auth_key[0:36]).digest()
     sha_b = sha256(auth_key[40:76] + msg_key).digest()
 
     aes_key = sha_a[0:8] + sha_b[8:24] + sha_a[24:32]
     aes_iv = sha_b[0:8] + sha_a[8:24] + sha_b[24:32]
-    logger.debug(f"AES key: {aes_key.hex()}")
-    logger.debug(f"AES IV: {aes_iv.hex()}")
+    logger.debug(f"AES Key               : {aes_key.hex()}")
+    logger.debug(f"AES IV                : {aes_iv.hex()}")
     return aes_key[:32], aes_iv[:16]
 
-
 def generate_auth_key(logger):
-    logger.info("Generating auth key using Diffie-Hellman (simulated)...")
+    logger.info("🔑 Simulated DH Key Exchange - Generated auth_key")
     auth_key = get_random_bytes(256)
-    logger.debug(f"Generated Auth Key: {auth_key.hex()}")
+    logger.debug(f"auth_key (hex)       : {auth_key.hex()}")
+    logger.debug(f"auth_key_id (SHA256) : {sha256(auth_key).hexdigest()}")
     return auth_key
-
 
 def encrypt_message(sender_user, recipient_user, plaintext_str):
     sender = sender_user.username or sender_user.email or sender_user.phone
@@ -85,7 +78,7 @@ def encrypt_message(sender_user, recipient_user, plaintext_str):
     logger = get_user_logger(sender)
 
     logger.info("===== MTProto ENCRYPTION FLOW START =====")
-    logger.info(f"\U0001f4e4 User '{sender}' is sending a message to '{recipient}'")
+    logger.info(f"📤 User '{sender}' is sending a message to '{recipient}'")
 
     if not sender_user.auth_key:
         sender_user.auth_key = generate_auth_key(logger)
@@ -106,6 +99,13 @@ def encrypt_message(sender_user, recipient_user, plaintext_str):
     }
     payload = json.dumps(payload_dict).encode()
 
+    logger.info(f"Message Content       : \"{plaintext_str}\"")
+    logger.info(f"Sender ID             : {sender_user.id}")
+    logger.info(f"Recipient ID          : {recipient_user.id}")
+    logger.info(f"Timestamp             : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"Msg ID                : {msg_id}")
+    logger.info(f"Seq No                : {seq_no}")
+
     to_encrypt = salt_bytes + session_id_bytes + payload
     temp_data = sender_user.auth_key[:32] + to_encrypt
     msg_key_full = sha256(temp_data).digest()
@@ -114,14 +114,12 @@ def encrypt_message(sender_user, recipient_user, plaintext_str):
     aes_key, aes_iv = derive_aes_key_iv(sender_user.auth_key, msg_key, logger)
     encrypted_data = aes_ige_encrypt(to_encrypt, aes_key, aes_iv, logger)
 
-    logger.debug(f"Auth Key ID         : {sender_user.auth_key_id}")
-    logger.debug(f"Salt (hex)          : {salt_bytes.hex()}")
-    logger.debug(f"Session ID (hex)    : {session_id_bytes.hex()}")
-    logger.debug(f"Msg ID              : {msg_id}")
-    logger.debug(f"Seq No              : {seq_no}")
-    logger.debug("Payload JSON        :\n" + json.dumps(payload_dict, indent=4))
-    logger.debug("Encrypted (base64)  : " + base64.b64encode(encrypted_data).decode())
-
+    logger.debug(f"Auth Key ID           : {sender_user.auth_key_id}")
+    logger.debug(f"msg_key               : {msg_key.hex()}")
+    logger.debug(f"Salt (hex)            : {salt_bytes.hex()}")
+    logger.debug(f"Session ID (hex)      : {session_id_bytes.hex()}")
+    logger.debug(f"Encrypted Payload     : {encrypted_data.hex()} ({len(encrypted_data)} bytes)")
+    logger.debug("Encrypted (base64)    : " + base64.b64encode(encrypted_data).decode())
     logger.info("===== MTProto ENCRYPTION FLOW END =====\n")
 
     return (
@@ -133,7 +131,6 @@ def encrypt_message(sender_user, recipient_user, plaintext_str):
         str(msg_id),
         seq_no
     )
-
 
 def decrypt_message(encrypted_blob, msg_key_hex, auth_key_id):
     from app.models.user import User
@@ -154,7 +151,6 @@ def decrypt_message(encrypted_blob, msg_key_hex, auth_key_id):
         payload = decrypted[16:]
 
         payload_json = json.loads(payload.decode())
-
         recipient_id = payload_json.get("recipient_id")
         recipient = User.query.get(recipient_id)
 
@@ -165,17 +161,25 @@ def decrypt_message(encrypted_blob, msg_key_hex, auth_key_id):
             logger = temp_logger
 
         logger.info("===== MTProto DECRYPTION FLOW START =====")
-        logger.info(f"\U0001f4e5 User '{recipient_name}' is receiving a message...")
-        logger.debug(f"Encrypted blob length: {len(encrypted_blob)} bytes")
-        logger.debug(f"Encrypted blob (hex)  : {encrypted_blob.hex()}")
+        logger.info(f"📥 User '{recipient_name}' is receiving a message...")
+        logger.debug(f"Encrypted Blob Length : {len(encrypted_blob)} bytes")
+        logger.debug(f"Encrypted Blob (hex)  : {encrypted_blob.hex()}")
 
-        logger.debug(f"Derived AES Key     : {aes_key.hex()}")
-        logger.debug(f"Derived AES IV      : {aes_iv.hex()}")
+        logger.info("Deriving AES key and IV...")
+        logger.debug(f"msg_key               : {msg_key.hex()}")
+        logger.debug(f"AES Key               : {aes_key.hex()}")
+        logger.debug(f"AES IV                : {aes_iv.hex()}")
+
         logger.info("Decrypting with AES-IGE...")
-        logger.debug(f"Decrypted data: {decrypted.hex()}")
-        logger.debug(f"Salt (hex)          : {salt.hex()}")
-        logger.debug(f"Session ID (hex)    : {session_id.hex()}")
-        logger.debug("Payload JSON        :\n" + json.dumps(payload_json, indent=4))
+        logger.debug(f"Decrypted Data (hex)  : {decrypted.hex()}")
+        logger.debug(f"Salt (hex)            : {salt.hex()}")
+        logger.debug(f"Session ID (hex)      : {session_id.hex()}")
+        logger.debug("Payload JSON          :\n" + json.dumps(payload_json, indent=4))
+
+        sender_id = payload_json.get("sender_id")
+        sender = User.query.get(sender_id)
+        sender_str = sender.username if sender else f"ID:{sender_id}"
+        logger.info(f"📬 Message received from '{sender_str}'")
         logger.info("===== MTProto DECRYPTION FLOW END =====\n")
 
         return payload_json

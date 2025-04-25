@@ -24,18 +24,21 @@ class Message(db.Model):
     seq_no = db.Column(db.Integer, nullable=True)               # Sequence number for ordering
 
     # 📎 Media Handling
-    file_path = db.Column(db.String(256), nullable=True)        # Path to encrypted file
-    thumbnail_path = db.Column(db.String(256), nullable=True)   # Path to encrypted thumbnail
+    file_path = db.Column(db.String(256), nullable=True)        # Path to encrypted file (optional)
+    thumbnail_path = db.Column(db.String(256), nullable=True)   # Path to encrypted thumbnail (optional)
     media_type = db.Column(db.String(32), nullable=True)        # image, video, file, etc.
     original_filename = db.Column(db.String(128), nullable=True)
 
     # ✅ Status & Flags
     status = db.Column(db.String(16), default="sent")           # sent, delivered, read, failed
-    retry_count = db.Column(db.Integer, default=0)
+    retry_count = db.Column(db.Integer, default=0)              # For retry mechanisms
 
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     visible_to_sender = db.Column(db.Boolean, default=True)
     visible_to_receiver = db.Column(db.Boolean, default=True)
 
     def __repr__(self):
-        return f"<Message {self.id} from {self.sender_id} to {self.receiver_id}>"
+        return (
+            f"<Message {self.id} from {self.sender_id} to {self.receiver_id} "
+            f"status={self.status} retry={self.retry_count}>"
+        )

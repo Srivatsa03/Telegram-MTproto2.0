@@ -1,6 +1,6 @@
 # chat_routes.py
 from flask import Blueprint, request, jsonify
-from flask_socketio import emit, join_room, disconnect
+from flask_socketio import emit, join_room, leave_room, disconnect
 from app import db, socketio
 from app.models.user import User
 from app.models.message import Message
@@ -10,6 +10,9 @@ import logging
 
 chat_bp = Blueprint("chat", __name__)
 logger = logging.getLogger(__name__)
+
+# Track connected users and their sockets
+connected_users = {}
 
 @chat_bp.route("/messages/<int:user_id>", methods=["GET"])
 def get_messages(user_id):
@@ -40,8 +43,6 @@ def handle_send_message(data):
     sender_id = data.get("sender_id")
     receiver_id = data.get("receiver_id")
     text = data.get("text")
-    media = data.get("media")
-    media_type = data.get("media_type")
 
     sender = User.query.get(sender_id)
     receiver = User.query.get(receiver_id)
@@ -49,6 +50,14 @@ def handle_send_message(data):
     if not sender or not receiver:
         emit("error", {"message": "User not found"})
         return
+
+    room = f"user_{receiver.id}"
+    active_sids = socketio.server.manager.rooms.get("/", {}).get(room, set())
+
+    if active_sids:
+        print(f"📨 Sending message from '{sender.username}' to ONLINE user '{receiver.username}'")
+    else:
+        print(f"📩 Storing message from '{sender.username}' for OFFLINE user '{receiver.username}'")    
 
     encrypted_blob, msg_key, auth_key_id, salt, session_id, msg_id, seq_no = encrypt_message(sender, receiver, text)
 
@@ -64,10 +73,6 @@ def handle_send_message(data):
         salt=salt,
         msg_id=msg_id,
         seq_no=seq_no,
-        media_type=media_type,
-        file_path=data.get("file_path"),
-        thumbnail_path=data.get("thumbnail_path"),
-        original_filename=data.get("filename"),
         status="sent"
     )
 
@@ -76,14 +81,17 @@ def handle_send_message(data):
 
     decrypted = decrypt_message(encrypted_blob, msg_key, auth_key_id)
 
-    emit("receive_message", {
-        "id": message.id,
-        "from": sender.id,
-        "to": receiver.id,
-        "text": decrypted.get("text"),
-        "timestamp": message.timestamp.isoformat(),
-        "status": "✔"
-    }, room=f"user_{receiver.id}")
+    if active_sids:
+        emit("receive_message", {
+            "id": message.id,
+            "from": sender.id,
+            "to": receiver.id,
+            "text": decrypted.get("text"),
+            "timestamp": message.timestamp.isoformat(),
+            "status": "✔"
+        }, room=room)
+        message.status = "delivered"
+        db.session.commit()
 
     emit("receive_message", {
         "id": message.id,
@@ -91,12 +99,7 @@ def handle_send_message(data):
         "to": receiver.id,
         "text": decrypted.get("text"),
         "timestamp": message.timestamp.isoformat(),
-        "status": "✔"
-    }, room=f"user_{sender.id}")
-
-    emit("message_status", {
-        "message_id": message.id,
-        "status": "✔"
+        "status": message.status
     }, room=f"user_{sender.id}")
 
 @socketio.on("mark_read")
@@ -161,20 +164,51 @@ def get_contacts(user_id):
 def handle_join(data):
     user_id = data.get("user_id")
     room = f"user_{user_id}"
+    sid = request.sid
 
     participants = socketio.server.manager.get_participants("/", room)
-    if request.sid not in participants:
-        join_room(room)
+    if sid in participants:
+        # Already joined this session, skip
+        return
 
-        user = User.query.get(user_id)
-        if user:
-            user.is_online = True
-            user.last_seen = datetime.utcnow()
-            db.session.commit()
+    join_room(room)
+
+    user = User.query.get(user_id)
+    if user:
+        user.is_online = True
+        user.last_seen = datetime.utcnow()
+        db.session.commit()
+
+        print(f"🔔 User '{user.username}' came ONLINE. Delivering stored messages...")
+
+        pending_messages = Message.query.filter_by(receiver_id=user_id, status="sent").all()
+        for msg in pending_messages:
+            decrypted = decrypt_message(msg.encrypted_data, msg.msg_key, msg.auth_key_id)
+            emit("receive_message", {
+                "id": msg.id,
+                "from": msg.sender_id,
+                "to": msg.receiver_id,
+                "text": decrypted.get("text"),
+                "timestamp": msg.timestamp.isoformat(),
+                "status": "✔"
+            }, room=room)
+            msg.status = "delivered"
+            print(f"📨 Delivered stored message from '{User.query.get(msg.sender_id).username}' to '{user.username}'")
+        db.session.commit()
 
 @socketio.on("disconnect")
 def handle_disconnect():
     sid = request.sid
+    for user_id, sids in connected_users.items():
+        if sid in sids:
+            sids.remove(sid)
+            if not sids:
+                user = User.query.get(user_id)
+                if user:
+                    user.is_online = False
+                    user.last_seen = datetime.utcnow()
+                    db.session.commit()
+            break
     print(f"🔌 Socket {sid} disconnected")
 
 @socketio.on("typing")
