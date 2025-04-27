@@ -1,4 +1,3 @@
-# chat_routes.py
 from flask import Blueprint, request, jsonify
 from flask_socketio import emit, join_room, leave_room, disconnect
 from app import db, socketio
@@ -11,7 +10,6 @@ import logging
 chat_bp = Blueprint("chat", __name__)
 logger = logging.getLogger(__name__)
 
-# Track connected users and their sockets
 connected_users = {}
 
 @chat_bp.route("/messages/<int:user_id>", methods=["GET"])
@@ -22,85 +20,146 @@ def get_messages(user_id):
 
     results = []
     for msg in messages:
-        decrypted = decrypt_message(msg.encrypted_data, msg.msg_key, msg.auth_key_id)
-
+        if msg.auth_key_id:
+            decrypted = decrypt_message(msg.encrypted_data, msg.msg_key, msg.auth_key_id)
+            text = decrypted.get("text")
+        else:
+            text = msg.encrypted_data  # For secret chats (E2EE)
         results.append({
             "id": msg.id,
             "from": msg.sender_id,
             "to": msg.receiver_id,
-            "text": decrypted.get("text"),
+            "text": text,
             "media_type": msg.media_type,
             "timestamp": msg.timestamp.isoformat(),
             "status": msg.status,
             "file": msg.file_path,
             "thumbnail": msg.thumbnail_path
         })
-
     return jsonify(results)
+
+@socketio.on("exchange_public_key")
+def handle_public_key_exchange(data):
+    sender_id = data.get("sender_id")
+    receiver_id = data.get("receiver_id")
+    public_key = data.get("public_key")
+
+    emit("receive_public_key", {
+        "sender_id": sender_id,
+        "public_key": public_key
+    }, room=f"user_{receiver_id}")
 
 @socketio.on("send_message")
 def handle_send_message(data):
     sender_id = data.get("sender_id")
     receiver_id = data.get("receiver_id")
     text = data.get("text")
+    chat_mode = data.get("chat_mode", "cloud")
 
     sender = User.query.get(sender_id)
     receiver = User.query.get(receiver_id)
-
     if not sender or not receiver:
         emit("error", {"message": "User not found"})
         return
 
-    room = f"user_{receiver.id}"
-    active_sids = socketio.server.manager.rooms.get("/", {}).get(room, set())
+    receiver_room = f"user_{receiver.id}"
+    sender_room = f"user_{sender.id}"
 
-    if active_sids:
-        print(f"📨 Sending message from '{sender.username}' to ONLINE user '{receiver.username}'")
+    active_sids = socketio.server.manager.rooms.get("/", {}).get(receiver_room, set())
+
+    # 🔐 Secret Chat Logic (unchanged)
+    if chat_mode == "secret":
+        encrypted_text = text.encode('utf-8')
+
+        message = Message(
+            sender_id=sender.id,
+            receiver_id=receiver.id,
+            encrypted_data=encrypted_text,
+            msg_key=None,
+            auth_key_id=b'secretchat',
+            session_id=data.get("session_id"),
+            salt=data.get("salt"),
+            msg_id=b'secretchat',
+            seq_no=None,
+            status="sent"
+        )
+        db.session.add(message)
+        db.session.commit()
+
+        # Emit to receiver (if online)
+        if active_sids:
+            emit("receive_message", {
+                "id": message.id,
+                "from": sender.id,
+                "to": receiver.id,
+                "text": message.encrypted_data.decode('utf-8'),
+                "timestamp": message.timestamp.isoformat(),
+                "status": "✔",
+                "chat_mode": "secret"
+            }, room=receiver_room)
+            message.status = "delivered"
+            db.session.commit()
+
+        # Emit to sender (always)
+        emit("receive_message", {
+            "id": message.id,
+            "from": sender.id,
+            "to": receiver.id,
+            "text": message.encrypted_data.decode('utf-8'),
+            "timestamp": message.timestamp.isoformat(),
+            "status": message.status,
+            "chat_mode": "secret"
+        }, room=sender_room)
+
+    # ☁️ Cloud Chat Logic
     else:
-        print(f"📩 Storing message from '{sender.username}' for OFFLINE user '{receiver.username}'")    
+        # Encrypt message (server-side encryption)
+        encrypted_blob, msg_key, auth_key_id, salt, session_id, msg_id, seq_no = encrypt_message(sender, receiver, text)
+        logger.info(f"[ENCRYPT] User '{sender.username}' sent message to '{receiver.username}'")
 
-    encrypted_blob, msg_key, auth_key_id, salt, session_id, msg_id, seq_no = encrypt_message(sender, receiver, text)
+        message = Message(
+            sender_id=sender.id,
+            receiver_id=receiver.id,
+            encrypted_data=encrypted_blob,
+            msg_key=msg_key,
+            auth_key_id=auth_key_id,
+            session_id=session_id,
+            salt=salt,
+            msg_id=msg_id,
+            seq_no=seq_no,
+            status="sent"
+        )
+        db.session.add(message)
+        db.session.commit()
 
-    logger.info(f"[ENCRYPT] User '{sender.username}' sent message to '{receiver.username}'")
+        # Decrypt message for frontend (plaintext)
+        decrypted = decrypt_message(encrypted_blob, msg_key, auth_key_id)
 
-    message = Message(
-        sender_id=sender.id,
-        receiver_id=receiver.id,
-        encrypted_data=encrypted_blob,
-        msg_key=msg_key,
-        auth_key_id=auth_key_id,
-        session_id=session_id,
-        salt=salt,
-        msg_id=msg_id,
-        seq_no=seq_no,
-        status="sent"
-    )
+        # Emit to receiver (if online)
+        if active_sids:
+            emit("receive_message", {
+                "id": message.id,
+                "from": sender.id,
+                "to": receiver.id,
+                "text": decrypted.get("text"),
+                "timestamp": message.timestamp.isoformat(),
+                "status": "✔",
+                "chat_mode": "cloud"
+            }, room=receiver_room)
+            message.status = "delivered"
+            db.session.commit()
 
-    db.session.add(message)
-    db.session.commit()
-
-    decrypted = decrypt_message(encrypted_blob, msg_key, auth_key_id)
-
-    if active_sids:
+        # Emit to sender (always)
         emit("receive_message", {
             "id": message.id,
             "from": sender.id,
             "to": receiver.id,
             "text": decrypted.get("text"),
             "timestamp": message.timestamp.isoformat(),
-            "status": "✔"
-        }, room=room)
-        message.status = "delivered"
-        db.session.commit()
+            "status": message.status,
+            "chat_mode": "cloud"
+        }, room=sender_room)
 
-    emit("receive_message", {
-        "id": message.id,
-        "from": sender.id,
-        "to": receiver.id,
-        "text": decrypted.get("text"),
-        "timestamp": message.timestamp.isoformat(),
-        "status": message.status
-    }, room=f"user_{sender.id}")
 
 @socketio.on("mark_read")
 def mark_message_read(data):

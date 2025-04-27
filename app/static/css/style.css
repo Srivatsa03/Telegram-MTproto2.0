@@ -104,3 +104,30 @@ body {
       max-width: 85%;
     }
   }
+
+  /* Common message bubble */
+.message-bubble {
+  padding: 10px;
+  border-radius: 10px;
+  max-width: 60%;
+}
+
+/* Cloud Chat styles */
+.cloud-chat.message-sent {
+  background-color: #d1e7dd;  /* Greenish */
+  color: #0f5132;
+}
+.cloud-chat.message-received {
+  background-color: #f8d7da;  /* Reddish */
+  color: #842029;
+}
+
+/* Secret Chat styles */
+.secret-chat.message-sent {
+  background-color: #cfe2ff;  /* Bluish */
+  color: #084298;
+}
+.secret-chat.message-received {
+  background-color: #e2e3e5;  /* Grayish */
+  color: #41464b;
+}

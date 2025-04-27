@@ -15,9 +15,28 @@
     <!-- Chat Window -->
     <div class="col-md-9">
       <h5 id="chatWith">Select a user to start chatting</h5>
+      <div id="chatModeLabel" class="mb-2 text-muted"></div>
 
-      <div id="chatBox" class="border rounded p-3 mb-3" style="height: 400px; overflow-y: auto; background: #f9f9f9;">
-        <!-- Messages will be appended here -->
+      <!-- Chat Mode Selector -->
+      <div class="mb-3">
+        <label for="chatMode">Chat Mode:</label>
+        <select id="chatMode" class="form-select w-auto d-inline" onchange="handleChatModeChange()">
+          <option value="cloud">Cloud Chat</option>
+          <option value="secret">Secret Chat</option>
+        </select>
+        <button id="initiateSecretBtn" class="btn btn-sm btn-warning ms-2" style="display: none;" onclick="initiateSecretForCurrentUser()">🔐 Initiate Secret Chat</button>
+      </div>
+
+      <div id="userStatus" class="text-muted mb-2"></div>
+
+      <!-- Cloud Chat Box -->
+      <div id="cloudChatBox" class="border rounded p-3 mb-3" style="height: 400px; overflow-y: auto; background: #f9f9f9; display: none;">
+        <!-- Cloud messages go here -->
+      </div>
+
+      <!-- Secret Chat Box -->
+      <div id="secretChatBox" class="border rounded p-3 mb-3" style="height: 400px; overflow-y: auto; background: #f9f9f9; display: none;">
+        <!-- Secret messages go here -->
       </div>
 
       <div id="typingStatus" class="mb-2 text-muted" style="display: none;"></div>
@@ -36,7 +55,45 @@
 </div>
 
 <input type="hidden" id="receiverId">
+
+<!-- Socket.IO -->
 <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
+<!-- Secret Chat Scripts -->
+<script src="{{ url_for('static', filename='js/secret_chat_dh.js') }}"></script>
+<script src="{{ url_for('static', filename='js/secret_chat_crypto.js') }}"></script>
 <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+
+<script>
+  // Handle mode switching in UI
+  function handleChatModeChange() {
+    const mode = document.getElementById("chatMode").value;
+    setChatMode(mode);
+    const initiateBtn = document.getElementById("initiateSecretBtn");
+
+    const cloudBox = document.getElementById("cloudChatBox");
+    const secretBox = document.getElementById("secretChatBox");
+
+    if (mode === "secret") {
+      cloudBox.style.display = "none";
+      secretBox.style.display = "block";
+      initiateBtn.style.display = "inline-block";
+    } else {
+      cloudBox.style.display = "block";
+      secretBox.style.display = "none";
+      initiateBtn.style.display = "none";
+    }
+  }
+
+  // Trigger DH key exchange for Secret Chat
+  function initiateSecretForCurrentUser() {
+    const receiverId = document.getElementById("receiverId").value;
+    if (!receiverId) {
+      alert("Select a user first!");
+      return;
+    }
+    initiateSecretChat(parseInt(receiverId));
+  }
+</script>
 
 {% endblock %}

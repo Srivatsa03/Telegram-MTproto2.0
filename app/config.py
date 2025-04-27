@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-import logging
+
 
 # Load environment variables from .env file
 load_dotenv()
@@ -38,5 +38,4 @@ class Config:
     # SESSION_COOKIE_NAME = "my_session"
     # FLASK_ADMIN = os.environ.get("FLASK_ADMIN", False)
 
-    log = logging.getLogger('werkzeug')
-    log.setLevel(logging.ERROR)  # Only show errors, suppress requests
+    

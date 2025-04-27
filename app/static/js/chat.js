@@ -1,17 +1,116 @@
 // Connect to Socket.IO server
-const socket = io.connect(window.location.origin);
 
+const socket = io.connect(window.location.origin);
+const pendingMessages = {};
+const keyExchangeComplete = {}; 
 // Join user's private room on page load
 const userId = localStorage.getItem("user_id");
 if (userId) {
     socket.emit("join", { user_id: parseInt(userId) });
 }
 
+// Default chat mode (cloud or secret)
+let chatMode = 'cloud'; // Default mode
+
+// Store DH shared keys (per user)
+const dhSharedKeys = {}; // { recipientId: sharedSecret }
+
+// Set chat mode (called from UI)
+function setChatMode(mode) {
+    chatMode = mode;
+    console.log(`Chat mode set to: ${chatMode}`);
+
+    const cloudBox = document.getElementById("cloudChatBox");
+    const secretBox = document.getElementById("secretChatBox");
+    const label = document.getElementById("chatModeLabel");
+
+    if (mode === 'secret') {
+        cloudBox.style.display = "none";
+        secretBox.style.display = "block";
+        label.textContent = "🔐 Secret Chat";
+    } else {
+        cloudBox.style.display = "block";
+        secretBox.style.display = "none";
+        label.textContent = "☁️ Cloud Chat";
+    }
+}
+
+// Initiate DH exchange (when Secret Chat starts)
+async function initiateSecretChat(recipientId) {
+    const privateKey = generatePrivateKey();
+    const publicKey = computePublicKey(privateKey);
+    console.log(`🚀 Sending public key to user ${recipientId}`);
+    socket.emit("exchange_public_key", {
+        sender_id: userId,
+        receiver_id: recipientId,
+        public_key: publicKey.toString()
+    });
+    dhSharedKeys[recipientId] = { privateKey, sharedSecret: null };
+}
+
+// Handle incoming public key (from recipient)
+socket.on("receive_public_key", (data) => {
+    console.log("🔑 Received public key from user", data.sender_id);
+    const recipientEntry = dhSharedKeys[data.sender_id];
+
+    if (!recipientEntry) {
+        console.log("❌ No private key entry for this user yet! Generating one...");
+        const privateKey = generatePrivateKey();
+        const publicKey = computePublicKey(privateKey);
+
+        dhSharedKeys[data.sender_id] = { privateKey, sharedSecret: null };
+
+        console.log(`🚀 Sending public key to user ${data.sender_id}`);
+        socket.emit("exchange_public_key", {
+            sender_id: userId,
+            receiver_id: data.sender_id,
+            public_key: publicKey.toString()
+        });
+    }
+    if (pendingMessages[data.sender_id]) {
+        console.log(`🔓 Decrypting ${pendingMessages[data.sender_id].length} queued messages (history + real-time)...`);
+        pendingMessages[data.sender_id].forEach(msg => {
+            decryptMessageWithAES(sharedSecret, msg.text).then((plainText) => {
+                msg.text = plainText;
+                const type = msg.from == userId ? "sent" : "received";
+                displayMessage(msg, type);
+            });
+        });
+        delete pendingMessages[data.sender_id];
+    }
+
+    const otherPublicKey = BigInt(data.public_key);
+    const sharedSecret = computeSharedKey(otherPublicKey, dhSharedKeys[data.sender_id].privateKey);
+    dhSharedKeys[data.sender_id].sharedSecret = sharedSecret;
+    keyExchangeComplete[data.sender_id] = true;  // ✅ Mark key exchange as complete
+
+    console.log(`✅ Shared secret computed with user ${data.sender_id}`);
+});
+
 // Handle incoming message
 socket.on("receive_message", (data) => {
-    displayMessage(data, data.from == userId ? "sent" : "received");
-
-    // Mark as delivered (✔✔)
+    if (data.chat_mode === 'secret') {
+        const otherUserId = data.from == userId ? data.to : data.from;
+        const sharedEntry = dhSharedKeys[otherUserId];
+    
+        if (!sharedEntry || !sharedEntry.sharedSecret) {
+            console.warn("🔄 Queuing message, shared key not ready yet!");
+    
+            if (!pendingMessages[otherUserId]) {
+                pendingMessages[otherUserId] = [];
+            }
+            pendingMessages[otherUserId].push(data);  // Queue message
+            return;
+        }
+    
+        decryptMessageWithAES(sharedEntry.sharedSecret, data.text).then((plainText) => {
+            data.text = plainText;
+            displayMessage(data, data.from == userId ? "sent" : "received");
+        });
+    } else if (data.chat_mode === 'cloud') {
+        // ✅ Handle Cloud Chat messages directly
+        displayMessage(data, data.from == userId ? "sent" : "received");
+    }
     if (data.id && data.to == userId) {
         socket.emit("message_status", {
             message_id: data.id,
@@ -29,27 +128,55 @@ socket.on("message_status", (data) => {
 function sendMessage() {
     const input = document.getElementById("messageInput");
     const text = input.value;
-    const receiverId = document.getElementById("receiverId").value;
+    const receiverId = parseInt(document.getElementById("receiverId").value);
 
     if (!text || !receiverId) return;
 
     const payload = {
         sender_id: parseInt(userId),
-        receiver_id: parseInt(receiverId),
-        text: text,
+        receiver_id: receiverId,
         timestamp: new Date().toISOString(),
         msg_id: generateMsgId(),
         salt: generateSalt(),
         session_id: getSessionId()
     };
 
-    socket.emit("send_message", payload);
-    input.value = "";
+    if (chatMode === 'secret') {
+        if (!keyExchangeComplete[receiverId]) {
+            console.error("❌ Key exchange not complete yet! Wait.");
+            return;
+        }
+    
+        const sharedEntry = dhSharedKeys[receiverId];
+        if (!sharedEntry || !sharedEntry.sharedSecret) {
+            console.error("❌ Shared key not established yet!");
+            return;
+        }
+    
+        encryptMessageWithAES(sharedEntry.sharedSecret, text).then((encryptedText) => {
+            payload.text = encryptedText;
+            payload.chat_mode = 'secret';
+            socket.emit("send_message", payload);
+
+            input.value = "";
+        });
+    }
+    else {  
+        // ✅ Cloud Chat logic (currently missing)
+        payload.text = text;
+        payload.chat_mode = 'cloud';
+        socket.emit("send_message", payload);
+    
+        input.value = "";  // ✅ Clears input for Cloud Chat too
+    }
 }
 
 // Display messages in the chat window
 function displayMessage(data, type) {
-    const chatBox = document.getElementById("chatBox");
+    const targetBox = data.chat_mode === 'secret'
+        ? document.getElementById("secretChatBox")
+        : document.getElementById("cloudChatBox");
+
     const messageWrapper = document.createElement("div");
     const timestamp = new Date(data.timestamp || Date.now()).toLocaleTimeString([], {
         hour: '2-digit',
@@ -61,8 +188,11 @@ function displayMessage(data, type) {
 
     const bubble = document.createElement("div");
     bubble.classList.add("message-bubble", type === "sent" ? "message-sent" : "message-received");
-    bubble.setAttribute("data-msg-id", data.id || "");
 
+    // 💡 Differentiate cloud vs secret visually
+    bubble.classList.add(data.chat_mode === 'secret' ? "secret-chat" : "cloud-chat");
+
+    bubble.setAttribute("data-msg-id", data.id || "");
     bubble.innerHTML = `
         <div class="message-text">${data.text}</div>
         <div class="message-meta">
@@ -71,10 +201,9 @@ function displayMessage(data, type) {
     `;
 
     messageWrapper.appendChild(bubble);
-    chatBox.appendChild(messageWrapper);
-    chatBox.scrollTop = chatBox.scrollHeight;
+    targetBox.appendChild(messageWrapper);
+    targetBox.scrollTop = targetBox.scrollHeight;
 
-    // Mark as read if receiving
     if (type === "received" && data.id) {
         socket.emit("mark_read", { message_id: data.id });
     }
@@ -192,6 +321,11 @@ function openChatWith(user) {
 
     loadChatHistory(user.id);
 
+    // 💡 Add this:
+    if (chatMode === 'secret') {
+        initiateSecretChat(user.id);  // Re-initiate DH exchange
+    }
+
     const chatList = document.getElementById("chatList");
     const clickedItem = [...chatList.children].find(li => li.dataset.userId == user.id);
     if (clickedItem) {
@@ -203,11 +337,19 @@ function openChatWith(user) {
 // Load chat history
 function loadChatHistory(withUserId) {
     const myId = localStorage.getItem("user_id");
+
+    // Clear the correct chat box (based on current chat mode)
+    const cloudBox = document.getElementById("cloudChatBox");
+    const secretBox = document.getElementById("secretChatBox");
+    if (chatMode === 'secret') {
+        secretBox.innerHTML = "";
+    } else {
+        cloudBox.innerHTML = "";
+    }
+
     fetch(`/chat/messages/${myId}`)
         .then(res => res.json())
         .then(messages => {
-            const chatBox = document.getElementById("chatBox");
-            chatBox.innerHTML = "";
             messages.forEach(msg => {
                 if ((msg.from == myId && msg.to == withUserId) || (msg.from == withUserId && msg.to == myId)) {
                     const type = msg.from == myId ? "sent" : "received";
@@ -224,7 +366,8 @@ window.onload = () => {
         socket.emit("join", { user_id: parseInt(userId) });
         loadChatList();
 
-        document.getElementById("chatBox").innerHTML = "";
+        document.getElementById("cloudChatBox").innerHTML = "";
+        document.getElementById("secretChatBox").innerHTML = "";
         document.getElementById("chatWith").innerText = "Select a user to start chatting";
         document.getElementById("userStatus").textContent = "";
     }

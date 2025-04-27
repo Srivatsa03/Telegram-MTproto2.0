@@ -14,8 +14,8 @@ class Message(db.Model):
 
     # 🔐 MTProto Encrypted Content
     encrypted_data = db.Column(db.LargeBinary, nullable=False)  # Encrypted payload (text + metadata)
-    msg_key = db.Column(db.String(64), nullable=False)          # Middle 128 bits of SHA256
-    auth_key_id = db.Column(db.String(64), nullable=False)      # SHA1(auth_key)[-8:]
+    msg_key = db.Column(db.String(64), nullable=True)          # Middle 128 bits of SHA256
+    auth_key_id = db.Column(db.String(64), nullable=True)      # SHA1(auth_key)[-8:]
 
     # 🔒 MTProto 2.0 Encryption Metadata
     salt = db.Column(db.String(64), nullable=True)              # Random salt for session
