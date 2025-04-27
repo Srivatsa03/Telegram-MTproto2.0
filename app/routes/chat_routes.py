@@ -69,6 +69,9 @@ def handle_send_message(data):
 
     # 🔐 Secret Chat Logic (unchanged)
     if chat_mode == "secret":
+        print(f"\n📤 [Secret Chat] Relaying encrypted message from '{sender.username}' to '{receiver.username}'")
+        print(f"🔒 [Secret Chat] Server cannot decrypt this message.\n")
+
         encrypted_text = text.encode('utf-8')
 
         message = Message(
@@ -113,6 +116,8 @@ def handle_send_message(data):
 
     # ☁️ Cloud Chat Logic
     else:
+        print(f"\n📨 [Cloud Chat] Message sent from '{sender.username}' to '{receiver.username}'")
+
         # Encrypt message (server-side encryption)
         encrypted_blob, msg_key, auth_key_id, salt, session_id, msg_id, seq_no = encrypt_message(sender, receiver, text)
         logger.info(f"[ENCRYPT] User '{sender.username}' sent message to '{receiver.username}'")
@@ -134,6 +139,9 @@ def handle_send_message(data):
 
         # Decrypt message for frontend (plaintext)
         decrypted = decrypt_message(encrypted_blob, msg_key, auth_key_id)
+
+        # Log decrypted message for Cloud Chat
+        print(f"🔓 [Cloud Chat] Decrypted message: \"{decrypted.get('text')}\"\n")
 
         # Emit to receiver (if online)
         if active_sids:
@@ -159,7 +167,6 @@ def handle_send_message(data):
             "status": message.status,
             "chat_mode": "cloud"
         }, room=sender_room)
-
 
 @socketio.on("mark_read")
 def mark_message_read(data):
@@ -225,35 +232,37 @@ def handle_join(data):
     room = f"user_{user_id}"
     sid = request.sid
 
-    participants = socketio.server.manager.get_participants("/", room)
-    if sid in participants:
-        # Already joined this session, skip
-        return
+    # ✅ Add socket ID to connected_users
+    if user_id not in connected_users:
+        connected_users[user_id] = set()
+    connected_users[user_id].add(sid)
+
+    # ✅ Only log the user online the FIRST time
+    if len(connected_users[user_id]) == 1:
+        user = User.query.get(user_id)
+        if user:
+            user.is_online = True
+            user.last_seen = datetime.utcnow()
+            db.session.commit()
+
+            print(f"🔔 User '{user.username}' came ONLINE. Delivering stored messages...")
+
+            pending_messages = Message.query.filter_by(receiver_id=user_id, status="sent").all()
+            for msg in pending_messages:
+                decrypted = decrypt_message(msg.encrypted_data, msg.msg_key, msg.auth_key_id)
+                emit("receive_message", {
+                    "id": msg.id,
+                    "from": msg.sender_id,
+                    "to": msg.receiver_id,
+                    "text": decrypted.get("text"),
+                    "timestamp": msg.timestamp.isoformat(),
+                    "status": "✔"
+                }, room=room)
+                msg.status = "delivered"
+                print(f"📨 Delivered stored message from '{User.query.get(msg.sender_id).username}' to '{user.username}'")
+            db.session.commit()
 
     join_room(room)
-
-    user = User.query.get(user_id)
-    if user:
-        user.is_online = True
-        user.last_seen = datetime.utcnow()
-        db.session.commit()
-
-        print(f"🔔 User '{user.username}' came ONLINE. Delivering stored messages...")
-
-        pending_messages = Message.query.filter_by(receiver_id=user_id, status="sent").all()
-        for msg in pending_messages:
-            decrypted = decrypt_message(msg.encrypted_data, msg.msg_key, msg.auth_key_id)
-            emit("receive_message", {
-                "id": msg.id,
-                "from": msg.sender_id,
-                "to": msg.receiver_id,
-                "text": decrypted.get("text"),
-                "timestamp": msg.timestamp.isoformat(),
-                "status": "✔"
-            }, room=room)
-            msg.status = "delivered"
-            print(f"📨 Delivered stored message from '{User.query.get(msg.sender_id).username}' to '{user.username}'")
-        db.session.commit()
 
 @socketio.on("disconnect")
 def handle_disconnect():
@@ -267,8 +276,8 @@ def handle_disconnect():
                     user.is_online = False
                     user.last_seen = datetime.utcnow()
                     db.session.commit()
+                    print(f"🔌 User '{user.username}' went OFFLINE.")
             break
-    print(f"🔌 Socket {sid} disconnected")
 
 @socketio.on("typing")
 def handle_typing(data):

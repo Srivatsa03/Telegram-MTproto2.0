@@ -48,18 +48,25 @@ async function initiateSecretChat(recipientId) {
     dhSharedKeys[recipientId] = { privateKey, sharedSecret: null };
 }
 
-// Handle incoming public key (from recipient)
 socket.on("receive_public_key", (data) => {
     console.log("🔑 Received public key from user", data.sender_id);
+
     const recipientEntry = dhSharedKeys[data.sender_id];
+    let privateKey, publicKey;
 
     if (!recipientEntry) {
+        // ✅ No private key yet → generate one
         console.log("❌ No private key entry for this user yet! Generating one...");
-        const privateKey = generatePrivateKey();
-        const publicKey = computePublicKey(privateKey);
+        privateKey = generatePrivateKey();
+        publicKey = computePublicKey(privateKey);
 
+        // ✅ Save private key
         dhSharedKeys[data.sender_id] = { privateKey, sharedSecret: null };
 
+        // Notify user that Secret Chat was initiated
+        alert(`🔐 Secret Chat initiated by user ${data.sender_id}`);
+
+        // ✅ Send back our public key
         console.log(`🚀 Sending public key to user ${data.sender_id}`);
         socket.emit("exchange_public_key", {
             sender_id: userId,
@@ -67,6 +74,16 @@ socket.on("receive_public_key", (data) => {
             public_key: publicKey.toString()
         });
     }
+
+    // ✅ Compute shared secret
+    const otherPublicKey = BigInt(data.public_key);
+    const sharedSecret = computeSharedKey(otherPublicKey, dhSharedKeys[data.sender_id].privateKey);
+    dhSharedKeys[data.sender_id].sharedSecret = sharedSecret;
+    keyExchangeComplete[data.sender_id] = true;
+
+    console.log(`✅ Shared secret computed with user ${data.sender_id}`);
+
+    // ✅ Process any queued messages (history or real-time)
     if (pendingMessages[data.sender_id]) {
         console.log(`🔓 Decrypting ${pendingMessages[data.sender_id].length} queued messages (history + real-time)...`);
         pendingMessages[data.sender_id].forEach(msg => {
@@ -78,13 +95,6 @@ socket.on("receive_public_key", (data) => {
         });
         delete pendingMessages[data.sender_id];
     }
-
-    const otherPublicKey = BigInt(data.public_key);
-    const sharedSecret = computeSharedKey(otherPublicKey, dhSharedKeys[data.sender_id].privateKey);
-    dhSharedKeys[data.sender_id].sharedSecret = sharedSecret;
-    keyExchangeComplete[data.sender_id] = true;  // ✅ Mark key exchange as complete
-
-    console.log(`✅ Shared secret computed with user ${data.sender_id}`);
 });
 
 // Handle incoming message
@@ -104,7 +114,11 @@ socket.on("receive_message", (data) => {
         }
     
         decryptMessageWithAES(sharedEntry.sharedSecret, data.text).then((plainText) => {
-            data.text = plainText;
+            const decryptedPayload = JSON.parse(plainText);  // ✅ Parse payload (JSON)
+        
+            // Overwrite data.text with JUST the message text
+            data.text = decryptedPayload.text;
+        
             displayMessage(data, data.from == userId ? "sent" : "received");
         });
     } else if (data.chat_mode === 'cloud') {
@@ -132,42 +146,70 @@ function sendMessage() {
 
     if (!text || !receiverId) return;
 
-    const payload = {
-        sender_id: parseInt(userId),
-        receiver_id: receiverId,
-        timestamp: new Date().toISOString(),
-        msg_id: generateMsgId(),
-        salt: generateSalt(),
-        session_id: getSessionId()
-    };
-
     if (chatMode === 'secret') {
         if (!keyExchangeComplete[receiverId]) {
             console.error("❌ Key exchange not complete yet! Wait.");
             return;
         }
-    
+
         const sharedEntry = dhSharedKeys[receiverId];
         if (!sharedEntry || !sharedEntry.sharedSecret) {
             console.error("❌ Shared key not established yet!");
             return;
         }
-    
-        encryptMessageWithAES(sharedEntry.sharedSecret, text).then((encryptedText) => {
-            payload.text = encryptedText;
-            payload.chat_mode = 'secret';
-            socket.emit("send_message", payload);
 
+        // 💡 MTProto-like fields for Secret Chat
+        const salt = generateSalt();
+        const session_id = getSessionId();
+        const msg_id = generateMsgId();
+        const seq_no = Math.floor(Math.random() * 1000000);  // Optional sequence number
+
+        const payloadObject = {
+            text: text,
+            time: Math.floor(Date.now() / 1000),
+            msg_id: msg_id,
+            seq_no: seq_no,
+            sender_id: userId,
+            receiver_id: receiverId
+        };
+
+        console.log(`🔧 Secret Chat MTProto-like Fields:`);
+        console.log(`Salt: ${salt}`);
+        console.log(`Session ID: ${session_id}`);
+        console.log(`Msg ID: ${msg_id}`);
+        console.log(`Seq No: ${seq_no}`);
+        console.log(`Payload (before encryption):`, payloadObject);
+
+        encryptMessageWithAES(sharedEntry.sharedSecret, JSON.stringify(payloadObject)).then((encryptedText) => {
+            const payload = {
+                sender_id: parseInt(userId),
+                receiver_id: receiverId,
+                text: encryptedText,
+                chat_mode: 'secret',
+                salt: salt,
+                session_id: session_id,
+                msg_id: msg_id,
+                seq_no: seq_no,
+                timestamp: new Date().toISOString()
+            };
+            socket.emit("send_message", payload);
             input.value = "";
         });
-    }
-    else {  
-        // ✅ Cloud Chat logic (currently missing)
-        payload.text = text;
-        payload.chat_mode = 'cloud';
+    } else {
+        // ☁️ Cloud Chat logic
+        const payload = {
+            sender_id: parseInt(userId),
+            receiver_id: receiverId,
+            text: text,
+            chat_mode: 'cloud',
+            timestamp: new Date().toISOString(),
+            msg_id: generateMsgId(),
+            salt: generateSalt(),
+            session_id: getSessionId()
+        };
+
         socket.emit("send_message", payload);
-    
-        input.value = "";  // ✅ Clears input for Cloud Chat too
+        input.value = "";  // ✅ Clears input for Cloud Chat
     }
 }
 
@@ -195,7 +237,7 @@ function displayMessage(data, type) {
     bubble.setAttribute("data-msg-id", data.id || "");
     bubble.innerHTML = `
         <div class="message-text">${data.text}</div>
-        <div class="message-meta">
+        <div class="message-meta small text-muted mt-1">
             ${timestamp} <span class="message-status">${data.status || "✔"}</span>
         </div>
     `;
