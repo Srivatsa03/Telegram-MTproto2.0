@@ -22,16 +22,22 @@ function setChatMode(mode) {
 
     const cloudBox = document.getElementById("cloudChatBox");
     const secretBox = document.getElementById("secretChatBox");
-    const label = document.getElementById("chatModeLabel");
 
+    // ✅ Null checks for both chat boxes
+    if (!cloudBox || !secretBox) {
+        console.error("❌ Chat boxes not found!");
+        return;
+    }
+
+    // ✅ Toggle chat boxes visibility and background
     if (mode === 'secret') {
-        cloudBox.style.display = "none";
-        secretBox.style.display = "block";
-        label.textContent = "🔐 Secret Chat";
+        cloudBox.style.display = 'none';
+        secretBox.style.display = 'block';
+        secretBox.classList.add("secret-chat-bg");  // Apply vignette here
     } else {
-        cloudBox.style.display = "block";
-        secretBox.style.display = "none";
-        label.textContent = "☁️ Cloud Chat";
+        secretBox.style.display = 'none';
+        cloudBox.style.display = 'block';
+        secretBox.classList.remove("secret-chat-bg");  // Remove vignette
     }
 }
 
@@ -116,9 +122,20 @@ socket.on("receive_message", (data) => {
         decryptMessageWithAES(sharedEntry.sharedSecret, data.text).then((plainText) => {
             const decryptedPayload = JSON.parse(plainText);  // ✅ Parse payload (JSON)
         
-            // Overwrite data.text with JUST the message text
-            data.text = decryptedPayload.text;
+            // 💡 Log the full decrypted payload
+            console.log(`🔓 Decrypted Payload:`);
+            console.log(`Text: ${decryptedPayload.text}`);
+            console.log(`Msg ID: ${decryptedPayload.msg_id}`);
+            console.log(`Seq No: ${decryptedPayload.seq_no}`);
+            console.log(`Timestamp (Unix): ${decryptedPayload.time}`);
+            console.log(`Sender ID: ${decryptedPayload.sender_id}`);
+            console.log(`Receiver ID: ${decryptedPayload.receiver_id}`);
         
+            // ✅ Replace data.text with just the message text
+            data.text = decryptedPayload.text;
+
+        
+            // ✅ Display the message
             displayMessage(data, data.from == userId ? "sent" : "received");
         });
     } else if (data.chat_mode === 'cloud') {
@@ -234,11 +251,14 @@ function displayMessage(data, type) {
     // 💡 Differentiate cloud vs secret visually
     bubble.classList.add(data.chat_mode === 'secret' ? "secret-chat" : "cloud-chat");
 
-    bubble.setAttribute("data-msg-id", data.id || "");
     bubble.innerHTML = `
         <div class="message-text">${data.text}</div>
         <div class="message-meta small text-muted mt-1">
-            ${timestamp} <span class="message-status">${data.status || "✔"}</span>
+            ${timestamp} 
+            <span class="message-status">${data.status || "✔"}</span>
+            <span class="badge ${data.chat_mode === 'secret' ? 'bg-warning text-dark' : 'bg-secondary'} ms-2">
+                ${data.chat_mode === 'secret' ? 'Secret' : 'Cloud'}
+            </span>
         </div>
     `;
 
@@ -353,21 +373,28 @@ function openChatWith(user) {
     document.getElementById("receiverId").value = user.id;
     localStorage.setItem("recipient_id", user.id);
 
+    // ✅ Safe toggle for online/offline status badges
     fetch(`/status/${user.id}`)
         .then(res => res.json())
         .then(data => {
-            document.getElementById("userStatus").textContent = data.status === "online"
-                ? "Online"
-                : `${data.status}`;
+            const onlineBadge = document.getElementById("onlineStatus");
+            const offlineBadge = document.getElementById("offlineStatus");
+
+            if (onlineBadge && offlineBadge) {
+                onlineBadge.style.display = data.status === "online" ? "inline-block" : "none";
+                offlineBadge.style.display = data.status === "online" ? "none" : "inline-block";
+            }
         });
 
+    // ✅ Load chat history for the current user
     loadChatHistory(user.id);
 
-    // 💡 Add this:
+    // ✅ Always re-initiate DH exchange for Secret Chat
     if (chatMode === 'secret') {
-        initiateSecretChat(user.id);  // Re-initiate DH exchange
+        initiateSecretChat(user.id);  // Ensure key exchange happens
     }
 
+    // ✅ Move user to top of chat list
     const chatList = document.getElementById("chatList");
     const clickedItem = [...chatList.children].find(li => li.dataset.userId == user.id);
     if (clickedItem) {
@@ -408,10 +435,16 @@ window.onload = () => {
         socket.emit("join", { user_id: parseInt(userId) });
         loadChatList();
 
+        // ✅ Clear both chat boxes
         document.getElementById("cloudChatBox").innerHTML = "";
         document.getElementById("secretChatBox").innerHTML = "";
+
+        // ✅ Reset header and status
         document.getElementById("chatWith").innerText = "Select a user to start chatting";
         document.getElementById("userStatus").textContent = "";
+
+        // ✅ Ensure Cloud Chat box is visible by default
+        setChatMode('cloud');
     }
 };
 

@@ -27,7 +27,10 @@
         <button id="initiateSecretBtn" class="btn btn-sm btn-warning ms-2" style="display: none;" onclick="initiateSecretForCurrentUser()">🔐 Initiate Secret Chat</button>
       </div>
 
-      <div id="userStatus" class="text-muted mb-2"></div>
+      <div id="userStatus" class="mb-2">
+        <span class="badge bg-success" style="display: none;" id="onlineStatus">Online</span>
+        <span class="badge bg-secondary" style="display: none;" id="offlineStatus">Offline</span>
+    </div>
 
       <!-- Cloud Chat Box -->
       <div id="cloudChatBox" class="border rounded p-3 mb-3" style="height: 400px; overflow-y: auto; background: #f9f9f9; display: none;">
