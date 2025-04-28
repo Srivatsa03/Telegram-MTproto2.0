@@ -20,6 +20,7 @@ async function deriveAESKey(sharedSecret) {
 
 // Encrypt message using AES-GCM
 async function encryptMessageWithAES(sharedSecret, plaintext) {
+    console.log(`🔐 Using AES-256-GCM (E2EE) for Secret Chat`);
     const aesKey = await deriveAESKey(sharedSecret);
     const iv = crypto.getRandomValues(new Uint8Array(12)); // 96-bit IV for GCM
     const encodedText = new TextEncoder().encode(plaintext);

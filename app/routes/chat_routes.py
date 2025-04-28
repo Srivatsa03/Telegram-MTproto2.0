@@ -237,7 +237,7 @@ def handle_join(data):
         connected_users[user_id] = set()
     connected_users[user_id].add(sid)
 
-    # ✅ Only log the user online the FIRST time
+    # ✅ Only mark the user as online the FIRST time
     if len(connected_users[user_id]) == 1:
         user = User.query.get(user_id)
         if user:
@@ -249,17 +249,17 @@ def handle_join(data):
 
             pending_messages = Message.query.filter_by(receiver_id=user_id, status="sent").all()
             for msg in pending_messages:
-                decrypted = decrypt_message(msg.encrypted_data, msg.msg_key, msg.auth_key_id)
+                chat_mode = "secret" if msg.auth_key_id == b'secretchat' else "cloud"
                 emit("receive_message", {
                     "id": msg.id,
                     "from": msg.sender_id,
                     "to": msg.receiver_id,
-                    "text": decrypted.get("text"),
+                    "text": msg.encrypted_data.decode('utf-8') if chat_mode == "secret" else decrypt_message(msg.encrypted_data, msg.msg_key, msg.auth_key_id).get("text"),
                     "timestamp": msg.timestamp.isoformat(),
-                    "status": "✔"
+                    "status": "✔",
+                    "chat_mode": chat_mode
                 }, room=room)
                 msg.status = "delivered"
-                print(f"📨 Delivered stored message from '{User.query.get(msg.sender_id).username}' to '{user.username}'")
             db.session.commit()
 
     join_room(room)

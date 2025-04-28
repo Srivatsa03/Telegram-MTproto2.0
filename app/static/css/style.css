@@ -131,3 +131,56 @@ body {
   background-color: #e2e3e5;  /* Grayish */
   color: #41464b;
 }
+
+
+.message-sent {
+  background-color: #007bff;  /* Blue for sent */
+  color: white;
+  border-radius: 15px 15px 0 15px;
+  padding: 8px 12px;
+  max-width: 60%;
+  word-wrap: break-word;
+}
+
+.message-received {
+  background-color: #e4e6eb;  /* Light gray for received */
+  color: black;
+  border-radius: 15px 15px 15px 0;
+  padding: 8px 12px;
+  max-width: 60%;
+  word-wrap: break-word;
+}
+
+#typingStatus {
+  font-style: italic;
+  color: #6c757d;
+  animation: blink 1s steps(1) infinite;
+}
+
+@keyframes blink {
+  50% { opacity: 0.5; }
+}
+
+#chatBox {
+  height: 400px;
+  overflow-y: auto;
+  background: #f1f2f6;  /* Softer background */
+  padding: 15px;
+  border-radius: 8px;
+}
+
+/* Secret Chat Vignette Background */
+.secret-chat-bg {
+  background: radial-gradient(circle at center, #222 0%, #000 100%);
+  color: white;  /* Optional: Make text white in secret chat */
+}
+
+/* Optional: Adjust chat box text for secret mode */
+#chatBox.secret-chat-bg .message-text {
+  color: #f1f1f1;
+}
+
+.secret-chat-bg {
+  background: radial-gradient(circle at center, #222 0%, #000 100%);
+  color: white;
+}
