@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="d-flex flex-column justify-content-center align-items-center" style="height: 80vh;">
+    <div class="text-center">
+        <h1 class="display-4 mb-4 text-primary">✅ MTProto Messenger is Live</h1>
+        <p class="lead mb-5 text-muted">Experience secure Cloud & Secret Chats with encryption inspired by Telegram's MTProto 2.0</p>
+        <a href="{{ url_for('general.login_page') }}" class="btn btn-primary btn-lg me-3">🔐 Login</a>
+        <a href="{{ url_for('general.register_page') }}" class="btn btn-outline-secondary btn-lg">📝 Register</a>
+    </div>
+</div>
+
+{% endblock %}
