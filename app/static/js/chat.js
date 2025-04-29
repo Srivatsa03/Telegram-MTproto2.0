@@ -3,6 +3,8 @@
 const socket = io.connect(window.location.origin);
 const pendingMessages = {};
 const keyExchangeComplete = {}; 
+const seqNumbers = {};
+
 // Join user's private room on page load
 const userId = localStorage.getItem("user_id");
 if (userId) {
@@ -19,27 +21,36 @@ const dhSharedKeys = {}; // { recipientId: sharedSecret }
 function setChatMode(mode) {
     chatMode = mode;
     console.log(`Chat mode set to: ${chatMode}`);
-
+  
     const cloudBox = document.getElementById("cloudChatBox");
     const secretBox = document.getElementById("secretChatBox");
-
-    // ✅ Null checks for both chat boxes
+    const body = document.body;   // 💡 Target body
+    const chatContainer = document.getElementById("chatBox");
+  
     if (!cloudBox || !secretBox) {
-        console.error("❌ Chat boxes not found!");
-        return;
+      console.error("Chat boxes not found!");
+      return;
     }
-
-    // ✅ Toggle chat boxes visibility and background
+  
     if (mode === 'secret') {
-        cloudBox.style.display = 'none';
-        secretBox.style.display = 'block';
-        secretBox.classList.add("secret-chat-bg");  // Apply vignette here
+      cloudBox.style.display = "none";
+      secretBox.style.display = "block";
+  
+      secretBox.classList.add("secret-chat-bg");
+  
+      // 🖤 Switch full body to dark mode
+      body.classList.add("secret-body");
+  
     } else {
-        secretBox.style.display = 'none';
-        cloudBox.style.display = 'block';
-        secretBox.classList.remove("secret-chat-bg");  // Remove vignette
+      cloudBox.style.display = "block";
+      secretBox.style.display = "none";
+  
+      secretBox.classList.remove("secret-chat-bg");
+  
+      // ☀️ Switch full body back to light mode
+      body.classList.remove("secret-body");
     }
-}
+  }
 
 // Initiate DH exchange (when Secret Chat starts)
 async function initiateSecretChat(recipientId) {
@@ -70,7 +81,17 @@ socket.on("receive_public_key", (data) => {
         dhSharedKeys[data.sender_id] = { privateKey, sharedSecret: null };
 
         // Notify user that Secret Chat was initiated
-        alert(`🔐 Secret Chat initiated by user ${data.sender_id}`);
+        // Try to fetch the username dynamically
+        fetch(`/user_info/${data.sender_id}`)
+            .then(res => res.json())
+            .then(info => {
+                const username = info.username || `User ${data.sender_id}`;
+                showToast(`🔐 Secret Chat initiated by ${username}`);
+            })
+            .catch(err => {
+                console.error("Failed to fetch username:", err);
+                showToast(`🔐 Secret Chat initiated by user ${data.sender_id}`);
+            });
 
         // ✅ Send back our public key
         console.log(`🚀 Sending public key to user ${data.sender_id}`);
@@ -89,6 +110,22 @@ socket.on("receive_public_key", (data) => {
 
     console.log(`✅ Shared secret computed with user ${data.sender_id}`);
 
+    const initiateBtn = document.getElementById("initiateSecretBtn");
+    if (initiateBtn) {
+        initiateBtn.classList.remove("btn-warning");
+        initiateBtn.classList.add("btn-success");
+        initiateBtn.innerHTML = "✅ Secret Chat Ready";
+        initiateBtn.disabled = true;
+    }
+
+    Swal.fire({
+        icon: 'success',
+        title: 'Secret Chat Ready!',
+        text: 'You are now chatting securely 🔐',
+        timer: 2000,
+        showConfirmButton: false
+    });
+
     // ✅ Process any queued messages (history or real-time)
     if (pendingMessages[data.sender_id]) {
         console.log(`🔓 Decrypting ${pendingMessages[data.sender_id].length} queued messages (history + real-time)...`);
@@ -105,43 +142,62 @@ socket.on("receive_public_key", (data) => {
 
 // Handle incoming message
 socket.on("receive_message", (data) => {
+    const otherUserId = data.from == userId ? data.to : data.from;
+
+    // ✅ Initialize sequence numbers for this user
+    if (!seqNumbers[otherUserId]) {
+        seqNumbers[otherUserId] = { outgoing: 0, incoming: 0 };
+    }
+
     if (data.chat_mode === 'secret') {
-        const otherUserId = data.from == userId ? data.to : data.from;
         const sharedEntry = dhSharedKeys[otherUserId];
-    
+
         if (!sharedEntry || !sharedEntry.sharedSecret) {
             console.warn("🔄 Queuing message, shared key not ready yet!");
-    
             if (!pendingMessages[otherUserId]) {
                 pendingMessages[otherUserId] = [];
             }
             pendingMessages[otherUserId].push(data);  // Queue message
             return;
         }
-    
-        decryptMessageWithAES(sharedEntry.sharedSecret, data.text).then((plainText) => {
-            const decryptedPayload = JSON.parse(plainText);  // ✅ Parse payload (JSON)
-        
-            // 💡 Log the full decrypted payload
-            console.log(`🔓 Decrypted Payload:`);
-            console.log(`Text: ${decryptedPayload.text}`);
-            console.log(`Msg ID: ${decryptedPayload.msg_id}`);
-            console.log(`Seq No: ${decryptedPayload.seq_no}`);
-            console.log(`Timestamp (Unix): ${decryptedPayload.time}`);
-            console.log(`Sender ID: ${decryptedPayload.sender_id}`);
-            console.log(`Receiver ID: ${decryptedPayload.receiver_id}`);
-        
-            // ✅ Replace data.text with just the message text
-            data.text = decryptedPayload.text;
 
-        
-            // ✅ Display the message
+        decryptMessageWithAES(sharedEntry.sharedSecret, data.text).then((plainText) => {
+            const decryptedPayload = JSON.parse(plainText);
+
+            const receivedSeqNo = decryptedPayload.seq_no;
+            const expectedSeqNo = seqNumbers[otherUserId].incoming + 1;
+
+            if (receivedSeqNo !== expectedSeqNo) {
+                
+            } else {
+                console.log(`Correct incoming sequence: ${receivedSeqNo}`);
+            }
+
+            // ✅ Always update incoming seq number
+            seqNumbers[otherUserId].incoming = receivedSeqNo;
+
+            // ✅ Layer check (bonus)
+            if (decryptedPayload.layer && decryptedPayload.layer > 46) {
+                console.warn(`⚠️ Received message with newer layer: ${decryptedPayload.layer}`);
+            }
+
+            // ✅ Full Decrypted payload log
+            console.log(`🔓 Decrypted Payload:`);
+            console.log(`- Text: ${decryptedPayload.text}`);
+            console.log(`- Msg ID: ${decryptedPayload.msg_id}`);
+            console.log(`- Seq No: ${decryptedPayload.seq_no}`);
+            console.log(`- Timestamp (Unix): ${decryptedPayload.time}`);
+            console.log(`- Sender ID: ${decryptedPayload.sender_id}`);
+            console.log(`- Receiver ID: ${decryptedPayload.receiver_id}`);
+
+            data.text = decryptedPayload.text;
             displayMessage(data, data.from == userId ? "sent" : "received");
         });
     } else if (data.chat_mode === 'cloud') {
-        // ✅ Handle Cloud Chat messages directly
         displayMessage(data, data.from == userId ? "sent" : "received");
     }
+
+    // ✅ Message status ack
     if (data.id && data.to == userId) {
         socket.emit("message_status", {
             message_id: data.id,
@@ -163,6 +219,11 @@ function sendMessage() {
 
     if (!text || !receiverId) return;
 
+    // Initialize sequence tracking
+    if (!seqNumbers[receiverId]) {
+        seqNumbers[receiverId] = { outgoing: 0, incoming: 0 };
+    }
+
     if (chatMode === 'secret') {
         if (!keyExchangeComplete[receiverId]) {
             console.error("❌ Key exchange not complete yet! Wait.");
@@ -175,11 +236,14 @@ function sendMessage() {
             return;
         }
 
-        // 💡 MTProto-like fields for Secret Chat
+        // 🧠 Increment outgoing sequence number
+        seqNumbers[receiverId].outgoing += 1;
+        const seq_no = seqNumbers[receiverId].outgoing;
+        const layer = 46;  // Bonus: like Telegram MTProto layers
+
+        const msg_id = generateMsgId();
         const salt = generateSalt();
         const session_id = getSessionId();
-        const msg_id = generateMsgId();
-        const seq_no = Math.floor(Math.random() * 1000000);  // Optional sequence number
 
         const payloadObject = {
             text: text,
@@ -187,15 +251,17 @@ function sendMessage() {
             msg_id: msg_id,
             seq_no: seq_no,
             sender_id: userId,
-            receiver_id: receiverId
+            receiver_id: receiverId,
+            layer: layer
         };
 
-        console.log(`🔧 Secret Chat MTProto-like Fields:`);
-        console.log(`Salt: ${salt}`);
-        console.log(`Session ID: ${session_id}`);
-        console.log(`Msg ID: ${msg_id}`);
-        console.log(`Seq No: ${seq_no}`);
-        console.log(`Payload (before encryption):`, payloadObject);
+        console.log(`🔧 [SECRET CHAT] Preparing MTProto-like payload:`);
+        console.log(`- Salt: ${salt}`);
+        console.log(`- Session ID: ${session_id}`);
+        console.log(`- Msg ID: ${msg_id}`);
+        console.log(`- Seq No (OUT): ${seq_no}`);
+        console.log(`- Layer: ${layer}`);
+        console.log(`- Payload:`, payloadObject);
 
         encryptMessageWithAES(sharedEntry.sharedSecret, JSON.stringify(payloadObject)).then((encryptedText) => {
             const payload = {
@@ -207,13 +273,15 @@ function sendMessage() {
                 session_id: session_id,
                 msg_id: msg_id,
                 seq_no: seq_no,
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                layer: layer
             };
             socket.emit("send_message", payload);
             input.value = "";
         });
+
     } else {
-        // ☁️ Cloud Chat logic
+        // ☁️ Cloud Chat
         const payload = {
             sender_id: parseInt(userId),
             receiver_id: receiverId,
@@ -226,7 +294,7 @@ function sendMessage() {
         };
 
         socket.emit("send_message", payload);
-        input.value = "";  // ✅ Clears input for Cloud Chat
+        input.value = "";
     }
 }
 

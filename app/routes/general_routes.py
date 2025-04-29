@@ -5,7 +5,7 @@ general_bp = Blueprint("general", __name__)
 
 @general_bp.route("/")
 def index():
-    return "<h2>✅ MTProto is Live</h2> <a href='/login'>Login</a>"
+    return render_template("index.html", hide_navbar=True)
 
 @general_bp.route("/login")
 def login_page():
@@ -47,3 +47,12 @@ def get_user_status(user_id):
     last_seen = f"{minutes} min ago" if minutes > 0 else "just now"
 
     return jsonify({"status": f"last seen {last_seen}"})
+
+@general_bp.route("/user_info/<int:user_id>")
+def user_info(user_id):
+    from app.models.user import User
+    user = User.query.get(user_id)
+    if user:
+        return jsonify({"username": user.username or user.email or user.phone})
+    else:
+        return jsonify({"username": None})

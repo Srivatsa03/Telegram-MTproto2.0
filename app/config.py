@@ -1,7 +1,6 @@
 import os
 from dotenv import load_dotenv
 
-
 # Load environment variables from .env file
 load_dotenv()
 
@@ -37,5 +36,3 @@ class Config:
     # Add more configurations as needed, for example:
     # SESSION_COOKIE_NAME = "my_session"
     # FLASK_ADMIN = os.environ.get("FLASK_ADMIN", False)
-
-    

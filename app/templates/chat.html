@@ -15,6 +15,7 @@
     <!-- Chat Window -->
     <div class="col-md-9">
       <h5 id="chatWith">Select a user to start chatting</h5>
+
       <div id="chatModeLabel" class="mb-2 text-muted"></div>
 
       <!-- Chat Mode Selector -->
@@ -30,7 +31,7 @@
       <div id="userStatus" class="mb-2">
         <span class="badge bg-success" style="display: none;" id="onlineStatus">Online</span>
         <span class="badge bg-secondary" style="display: none;" id="offlineStatus">Offline</span>
-    </div>
+      </div>
 
       <!-- Cloud Chat Box -->
       <div id="cloudChatBox" class="border rounded p-3 mb-3" style="height: 400px; overflow-y: auto; background: #f9f9f9; display: none;">
@@ -38,7 +39,7 @@
       </div>
 
       <!-- Secret Chat Box -->
-      <div id="secretChatBox" class="border rounded p-3 mb-3" style="height: 400px; overflow-y: auto; background: #f9f9f9; display: none;">
+      <div id="secretChatBox" class="border rounded p-3 mb-3" style="height: 400px; overflow-y: auto; background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%); color: white; display: none;">
         <!-- Secret messages go here -->
       </div>
 
@@ -67,36 +68,75 @@
 <script src="{{ url_for('static', filename='js/secret_chat_crypto.js') }}"></script>
 <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
 
+<!-- Toast Container -->
+<div id="toastContainer" style="position: fixed; top: 20px; right: 20px; z-index: 9999;"></div>
+
+<style>
+.toast-message {
+  background: linear-gradient(135deg, #28a745, #218838);
+  color: white;
+  padding: 12px 20px;
+  border-radius: 8px;
+  margin-top: 10px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  animation: slideIn 0.5s ease forwards;
+  font-weight: 500;
+}
+@keyframes slideIn {
+  0% { transform: translateX(100%); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+</style>
+
 <script>
-  // Handle mode switching in UI
-  function handleChatModeChange() {
-    const mode = document.getElementById("chatMode").value;
-    setChatMode(mode);
-    const initiateBtn = document.getElementById("initiateSecretBtn");
+function handleChatModeChange() {
+  const mode = document.getElementById("chatMode").value;
+  setChatMode(mode);
+  const initiateBtn = document.getElementById("initiateSecretBtn");
+  const cloudBox = document.getElementById("cloudChatBox");
+  const secretBox = document.getElementById("secretChatBox");
 
-    const cloudBox = document.getElementById("cloudChatBox");
-    const secretBox = document.getElementById("secretChatBox");
-
-    if (mode === "secret") {
-      cloudBox.style.display = "none";
-      secretBox.style.display = "block";
-      initiateBtn.style.display = "inline-block";
-    } else {
-      cloudBox.style.display = "block";
-      secretBox.style.display = "none";
-      initiateBtn.style.display = "none";
-    }
+  if (mode === "secret") {
+    cloudBox.style.display = "none";
+    secretBox.style.display = "block";
+    initiateBtn.style.display = "inline-block";
+  } else {
+    cloudBox.style.display = "block";
+    secretBox.style.display = "none";
+    initiateBtn.style.display = "none";
   }
+}
 
-  // Trigger DH key exchange for Secret Chat
-  function initiateSecretForCurrentUser() {
-    const receiverId = document.getElementById("receiverId").value;
-    if (!receiverId) {
-      alert("Select a user first!");
-      return;
-    }
-    initiateSecretChat(parseInt(receiverId));
+function initiateSecretForCurrentUser() {
+  const receiverId = document.getElementById("receiverId").value;
+  if (!receiverId) {
+    showToast("⚠️ Select a user first to initiate Secret Chat!");
+    return;
   }
+  initiateSecretChat(parseInt(receiverId));
+}
+function showToast(message) {
+  const container = document.getElementById("toastContainer");
+  const toast = document.createElement("div");
+  toast.className = "toast-message";
+  toast.innerText = message;
+  container.appendChild(toast);
+
+  // Auto-dismiss after 3 seconds
+  setTimeout(() => {
+    toast.remove();
+  }, 3000);
+}
+
+// ✅ Fancy Toast Function
+function showToast(message) {
+  const container = document.getElementById("toastContainer");
+  const toast = document.createElement("div");
+  toast.className = "toast-message";
+  toast.innerText = message;
+  container.appendChild(toast);
+  setTimeout(() => { toast.remove(); }, 3000);
+}
 </script>
 
 {% endblock %}

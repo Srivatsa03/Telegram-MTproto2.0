@@ -1,23 +1,20 @@
-<!-- templates/login.html -->
-
 {% extends "base.html" %}
 {% block content %}
-<div class="container mt-5" style="max-width: 500px;">
-  <h2 class="text-center">Login</h2>
-  <form action="/auth/login" method="post" onsubmit="return handleLogin(event)">
-    <div class="mb-3">
-      <label for="login_id" class="form-label">Email / Phone / Username</label>
-      <input type="text" class="form-control" id="login_id" name="login_id" required>
-    </div>
-    <div class="mb-3">
-      <label for="password" class="form-label">Password</label>
-      <input type="password" class="form-control" id="password" name="password" required>
-    </div>
-    <button type="submit" class="btn btn-primary w-100">Log In</button>
-    <p class="text-center mt-3">
-      <a href="/forgot_password">Forgot Password?</a>
-    </p>
-  </form>
+
+<div class="login-container">
+  <div class="login-box">
+    <h2>🔐 Welcome Back</h2>
+    <form action="/auth/login" method="post" onsubmit="return handleLogin(event)">
+      <div class="mb-3">
+        <input type="text" class="form-control" id="login_id" name="login_id" placeholder="Email / Phone / Username" required>
+      </div>
+      <div class="mb-3">
+        <input type="password" class="form-control" id="password" name="password" placeholder="Password" required>
+      </div>
+      <button type="submit" class="btn btn-primary">Log In</button>
+      <a href="/forgot_password" class="forgot-link">Forgot Password?</a>
+    </form>
+  </div>
 </div>
 
 <script>
@@ -43,4 +40,5 @@ function handleLogin(event) {
   });
 }
 </script>
+
 {% endblock %}
