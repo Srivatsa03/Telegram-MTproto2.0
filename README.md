@@ -109,6 +109,33 @@ This setup helps you verify how the application handles messaging, encryption, a
 
 --- 
 
+### Logs & Debugging Information
+
+- **Secret Chat Logs**:
+  - When using **Secret Chat**, messages are encrypted end-to-end.
+  - Therefore, **the server terminal will not print any decrypted message content**.
+  - To view debug info (key generation, encryption steps, etc.), **open your browser's Developer Tools → Console**.
+  - Right-click anywhere → Inspect → Console tab.
+
+- **Cloud Chat Logs**:
+  - Cloud Chat uses server-side encryption and decryption.
+  - All encryption steps, message payloads, and delivery logs are saved in the `logs/` directory.
+  - Each user has their own log file:
+    ```
+    logs/
+      srivatsa.log
+      jaideep.log
+      temp_debug.log
+    ```
+  - These files contain AES-256-IGE encryption metadata such as:
+    - salt
+    - session_id
+    - msg_key
+    - decrypted message text
+    - full encryption lifecycle
+   
+---
+
 ## API & Socket Events
 
 This project integrates REST API endpoints and WebSocket (Socket.IO) events for real-time, secure communication.
