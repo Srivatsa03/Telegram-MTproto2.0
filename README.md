@@ -20,7 +20,7 @@ with real-time delivery, file sharing, typing indicators, and message status upd
 ## Installation Instructions
 1. Clone the Repository
    ```bash
-   git clone https://github.com/yourusername/mtproto-messenger.git
+   git clone https://github.com/Srivatsa03/Telegram-MTproto2.0.git
    cd mtproto-messenger
    ```
 2. Set Up Python Virtual Environment
