@@ -139,6 +139,25 @@ This project integrates REST API endpoints and WebSocket (Socket.IO) events for 
 
 ---
 
+### MTProto-like Encryption Parameters
+
+In both Cloud and Secret Chats, messages are wrapped with essential metadata before encryption to simulate the MTProto structure:
+
+- **Salt**: A random 64-bit value used to add entropy and prevent replay attacks.
+- **Session ID**: A unique identifier generated per client session to separate message contexts.
+- **Message ID (msg_id)**: A 64-bit identifier created using the current timestamp in milliseconds.
+- **Sequence Number (seq_no)**: Incremented per message per user to track message ordering and detect duplicates.
+- **Payload**: The full message object (in JSON form), which includes:
+  - `text`: Actual message text
+  - `time`: UNIX timestamp
+  - `msg_id`: Message identifier
+  - `seq_no`: Sender’s current sequence number
+  - `sender_id` and `receiver_id`: User IDs
+
+In Secret Chats, the entire payload is encrypted client-side using the shared secret key derived from the DH exchange. In Cloud Chats, this payload is encrypted server-side using a persistent auth key (AES-256-IGE).
+
+---
+
 ##  WebSocket (Socket.IO) Events
 
 - `join` — `{ user_id }`  
